@@ -27,6 +27,14 @@ then
     # Make the workspace owned by the stack user
     sudo chown -R $STACK_USER:$STACK_USER $BASE
 
+elif [[ "$VENV" == dsvm-scenario* ]]
+then
+    DEVSTACK_LOCAL_CONFIG="NEUTRON_CREATE_INITIAL_NETWORKS=False"
+    DEVSTACK_LOCAL_CONFIG+=$'\n'"enable_plugin $PROJECT_NAME https://git.openstack.org/openstack/$PROJECT_NAME"
+    export DEVSTACK_LOCAL_CONFIG
+
+    $BASE/new/devstack-gate/devstack-vm-gate.sh
+
 else
     echo "Unrecognized environment $VENV".
     exit 1

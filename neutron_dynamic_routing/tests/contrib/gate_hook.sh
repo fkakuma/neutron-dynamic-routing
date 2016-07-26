@@ -26,4 +26,17 @@ then
 
     # Make the workspace owned by the stack user
     sudo chown -R $STACK_USER:$STACK_USER $BASE
+
+elif [[ "$VENV" == dsvm-api* ]] || [[ "$VENV" == dsvm-scenario* ]]
+then
+    if ! pip freeze | grep ryu > /dev/null
+    then
+        sudo pip install ryu
+    fi
+    RYU_PATH=`pip show ryu | grep Location | cut -d' ' -f2`/ryu
+    source $DEVSTACK_PATH/functions
+    sudo usermod -aG sudo tempest
+    bash $RYU_PATH/tests/integrated/common/install_docker_test_pkg.sh --sudo-pip
+
+    $GATE_DEST/devstack-gate/devstack-vm-gate.sh
 fi

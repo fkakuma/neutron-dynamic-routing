@@ -27,6 +27,13 @@ then
     # Make the workspace owned by the stack user
     sudo chown -R $STACK_USER:$STACK_USER $BASE
 
+elif [[ "$VENV" == dsvm-scenario* ]]
+then
+    source $DEVSTACK_PATH/functions
+    sudo usermod -aG sudo tempest
+
+    $GATE_DEST/devstack-gate/devstack-vm-gate.sh
+
 else
     echo "Unrecognized environment $VENV".
     exit 1

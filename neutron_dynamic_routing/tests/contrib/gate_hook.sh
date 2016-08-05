@@ -29,6 +29,10 @@ then
 
 elif [[ "$VENV" == dsvm-scenario* ]]
 then
+    source $DEVSTACK_PATH/functions
+    install_package docker.io
+    git clone https://github.com/jpetazzo/pipework.git $GATE_DEST/pipework
+    sudo install -m 0755 $GATE_DEST/pipework/pipework /usr/local/bin/pipework
     DEVSTACK_LOCAL_CONFIG="NEUTRON_CREATE_INITIAL_NETWORKS=False"
     DEVSTACK_LOCAL_CONFIG+=$'\n'"enable_plugin $PROJECT_NAME https://git.openstack.org/openstack/$PROJECT_NAME"
     export DEVSTACK_LOCAL_CONFIG

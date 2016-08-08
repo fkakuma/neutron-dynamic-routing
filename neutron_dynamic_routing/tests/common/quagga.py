@@ -286,11 +286,13 @@ class QuaggaBGPContainer(base.BGPContainer):
             cmd = [cmd]
         cmd = ' '.join("-c '{0}'".format(c) for c in cmd)
         if config:
-            return self.local("vtysh -d bgpd -c 'en' -c 'conf t' "
-                              "-c 'router bgp {0}' {1}".format(self.asn, cmd),
-                              capture=True)
+            return self.exec_on_ctn(
+                "vtysh -d bgpd -c 'en' -c 'conf t' -c "
+                "'router bgp {0}' {1}".format(self.asn, cmd),
+                capture=True)
         else:
-            return self.local("vtysh -d bgpd {0}".format(cmd), capture=True)
+            return self.exec_on_ctn("vtysh -d bgpd {0}".format(cmd),
+                                    capture=True)
 
     def reload_config(self):
         daemon = []
@@ -299,7 +301,7 @@ class QuaggaBGPContainer(base.BGPContainer):
             daemon.append('zebra')
         for d in daemon:
             cmd = '/usr/bin/pkill {0} -SIGHUP'.format(d)
-            self.local(cmd, capture=True)
+            self.exec_on_ctn(cmd, capture=True)
 
 
 class RawQuaggaBGPContainer(QuaggaBGPContainer):

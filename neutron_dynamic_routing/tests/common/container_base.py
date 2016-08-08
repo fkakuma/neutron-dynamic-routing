@@ -22,6 +22,8 @@ import itertools
 
 from fabric.api import local
 from fabric.api import lcd
+from fabric.api import settings
+from fabric.context_managers import hide
 from fabric.state import env
 from fabric.state import output
 from docker import Client
@@ -49,8 +51,11 @@ BGP_ATTR_TYPE_CLUSTER_LIST = 10
 BGP_ATTR_TYPE_MP_REACH_NLRI = 14
 BGP_ATTR_TYPE_EXTENDED_COMMUNITIES = 16
 
-env.abort_exception = RuntimeError
-output.stderr = False
+
+class FabricError(Exception):
+    def __init__(self, out):
+        super(FabricError, self).__init__()
+        self.out = out
 
 
 def try_several_times(f, t=3, s=1):
@@ -65,17 +70,6 @@ def try_several_times(f, t=3, s=1):
     raise e
 
 
-def get_bridges():
-    return try_several_times(lambda: local(
-        "brctl show | awk 'NR > 1{print $1}'", capture=True)).split('\n')
-
-
-def get_containers():
-    return try_several_times(lambda: local(
-        "sudo docker ps -a | awk 'NR > 1 {print $NF}'",
-        capture=True)).split('\n')
-
-
 class CmdBuffer(list):
     def __init__(self, delim='\n'):
         super(CmdBuffer, self).__init__()
@@ -88,9 +82,43 @@ class CmdBuffer(list):
         return self.delim.join(self)
 
 
+class Command(object):
+
+    """A returned object from local() has the following attributes
+        out: stdout if a command is succesful
+        out.succeeded: True/False
+        out.failed: True/False
+        out.return_code: returncode of subprocess.Popen()
+        out.stderr: stderr if a command files
+
+     For more information see the following URL.
+        http://docs.fabfile.org/en/1.12.0/api/core/operations.html
+          ?highlight=fabric.operations.local#fabric.operations.local
+    """
+    def execute(self, cmd, capture=True, times=1, interval=1):
+        for i in range(times):
+            with settings(warn_only=True):
+                with hide('running', 'warnings'):
+                    out = local(cmd, capture=capture)
+            if out.succeeded:
+                LOG.info(out.command)
+                return out
+            else:
+                time.sleep(interval)
+        LOG.error(out.command)
+        LOG.error(out.stderr)
+        raise FabricError(out)
+
+    def sudo(self, cmd, capture=True, times=1, interval=1):
+        cmd = 'sudo ' + cmd
+        return self.execute(cmd, capture=capture,
+                            times=times, interval=interval)
+
+
 class DockerImage(object):
     def __init__(self, baseimage='ubuntu:14.04.4'):
         self.baseimage = baseimage
+        self.cmd = Command()
 
     def create_quagga_image(self, tagname='quagga'):
         workdir = TEST_BASE_DIR + '/' + tagname
@@ -101,21 +129,24 @@ class DockerImage(object):
         c << 'RUN apt-get install -qy --no-install-recommends ' + pkges
         c << 'CMD /usr/lib/quagga/bgpd'
 
-        local('mkdir -p {0}'.format(workdir))
+        self.cmd.execute('mkdir -p {0}'.format(workdir))
         with lcd(workdir):
-            local('echo \'{0}\' > Dockerfile'.format(str(c)))
+            self.cmd.execute('echo \'{0}\' > Dockerfile'.format(str(c)))
             self.build_image(tagname, workdir)
-            local('rm -rf ' + workdir)
+            self.cmd.execute('rm -rf ' + workdir)
         return tagname
 
     def build_image(self, tagname, dockerfile_dir):
-        local("sudo docker build -t {0} {1}".format(tagname, dockerfile_dir))
+        self.cmd.sudo(
+            "docker build -t {0} {1}".format(tagname, dockerfile_dir),
+            times=3)
 
 
 class Bridge(object):
     def __init__(self, name, subnet='', start_ip=None, end_ip=None,
                  with_ip=True, self_ip=False,
                  fixed_ip=None, reuse=False):
+        self.cmd = Command()
         self.name = name
         if TEST_PREFIX != '':
             self.name = '{0}_{1}'.format(TEST_PREFIX, name)
@@ -140,12 +171,11 @@ class Bridge(object):
 
         if not reuse:
             def f():
-                if self.name in get_bridges():
-                    self.delete()
-                local("sudo ip link add {0} type bridge".format(self.name))
+                cmd = "ip link add {0} type bridge".format(self.name)
+                self.delete()
+                self.execute(cmd, sudo=True)
             try_several_times(f)
-        try_several_times(lambda: local(
-            "sudo ip link set up dev {0}".format(self.name)))
+        self.exec_retry("ip link set up dev {0}".format(self.name), sudo=True)
 
         self.self_ip = self_ip
         if self_ip:
@@ -156,18 +186,43 @@ class Bridge(object):
             ips = self.check_br_addr(self.name)
             for key, ip in ips.items():
                 if self.subnet.version == key:
-                    try_several_times(lambda: local(
-                        "sudo ip addr del {0} dev {1}".format(
-                            ip, self.name)))
-            try_several_times(lambda: local(
-                "sudo ip addr add {0} dev {1}".format(
-                    self.ip_addr, self.name)))
+                    self.exec_retry(
+                        "ip addr del {0} dev {1}".format(ip, self.name),
+                        sudo=True)
+            self.exec_retry(
+                "ip addr add {0} dev {1}".format(self.ip_addr, self.name),
+                sudo=True)
         self.ctns = []
+
+    def get_bridges(self):
+        out = self.exec_retry('brctl show')
+        bridges = []
+        for line in out.splitlines()[1:]:
+            bridges.append(line.split()[0])
+        return bridges
+
+    def exist(self):
+        if self.name in self.get_bridges():
+            return True
+        else:
+            return False
+
+    def execute(self, cmd, capture=True, sudo=False):
+        if sudo:
+            return self.cmd.sudo(cmd, capture=capture)
+        else:
+            return self.cmd.execute(cmd, capture=capture)
+
+    def exec_retry(self, cmd, capture=True, sudo=False):
+        if sudo:
+            return self.cmd.sudo(cmd, capture=capture, times=3, interval=1)
+        else:
+            return self.cmd.execute(cmd, capture=capture, times=3, interval=1)
 
     def check_br_addr(self, br):
         ips = {}
         cmd = "ip a show dev %s" % br
-        for line in local(cmd, capture=True).split('\n'):
+        for line in self.execute(cmd, sudo=True).split('\n'):
             if line.strip().startswith("inet "):
                 elems = [e.strip() for e in line.strip().split(' ')]
                 ips[4] = elems[1]
@@ -191,11 +246,15 @@ class Bridge(object):
             ctn.pipework(self, '0/0', name)
         return ip_address
 
-    def delete(self):
-        try_several_times(lambda: local(
-            "sudo ip link set down dev {0}".format(self.name)))
-        try_several_times(lambda: local(
-            "sudo ip link delete {0} type bridge".format(self.name)))
+    def delete(self, check_exist=True):
+        if check_exist:
+            if not self.exist():
+                return
+        self.exec_retry("ip link set down dev {0}".format(self.name),
+                        sudo=True)
+        self.exec_retry(
+            "ip link delete {0} type bridge".format(self.name),
+            sudo=True)
 
 
 class Container(object):
@@ -209,13 +268,19 @@ class Container(object):
         self.eths = []
         self.id = None
 
-        if self.docker_name() in get_containers():
-            self.remove()
+        self.cmd = Command()
+        self.remove()
 
     def docker_name(self):
         if TEST_PREFIX == DEFAULT_TEST_PREFIX:
             return self.name
         return '{0}_{1}'.format(TEST_PREFIX, self.name)
+
+    def get_docker_id(self):
+        if self.id:
+            return self.id
+        else:
+            return self.docker_name()
 
     def next_if_name(self):
         name = 'eth{0}'.format(len(self.eths) + 1)
@@ -241,19 +306,58 @@ class Container(object):
                 ips.append(addrs[1])
         return ips
 
+    def execute(self, cmd, capture=True):
+        return self.cmd.execute(cmd, capture=capture)
+
+    def dcexec(self, cmd, capture=True):
+        return self.cmd.sudo(cmd, capture=capture)
+
+    def dcexec_retry(self, cmd, capture=True):
+        return self.cmd.sudo(cmd, capture=capture, times=3, interval=1)
+
+    def exec_on_ctn(self, cmd, capture=True, stream=False, detach=False):
+        name = self.docker_name()
+        if stream:
+            # This needs root permission.
+            dcli = Client(timeout=120, version='auto')
+            i = dcli.exec_create(container=name, cmd=cmd)
+            return dcli.exec_start(i['Id'], tty=True,
+                                   stream=stream, detach=detach)
+        else:
+            flag = '-d' if detach else ''
+            return self.dcexec('docker exec {0} {1} {2}'.format(
+                flag, name, cmd), capture=capture)
+
+    def get_containers(self, allctn=False):
+        name = self.docker_name()
+        cmd = 'docker ps --no-trunc=true'
+        if allctn:
+            cmd += ' --all=true'
+        out = self.dcexec_retry(cmd)
+        containers = []
+        for line in out.splitlines()[1:]:
+            containers.append(line.split()[-1])
+        return containers
+
+    def exist(self, allctn=False):
+        if self.docker_name() in self.get_containers(allctn=allctn):
+            return True
+        else:
+            return False
+
     def run(self):
         c = CmdBuffer(' ')
-        c << "sudo docker run --privileged=true"
+        c << "docker run --privileged=true"
         for sv in self.shared_volumes:
             c << "-v {0}:{1}".format(sv[0], sv[1])
         c << "--name {0} --hostname {0} -id {1}".format(self.docker_name(),
                                                         self.image)
-        self.id = try_several_times(lambda: local(str(c), capture=True))
+        self.id = self.dcexec_retry(str(c))
         self.is_running = True
-        self.local("ip li set up dev lo")
+        self.exec_on_ctn("ip li set up dev lo")
         ipv4 = None
         ipv6 = None
-        for line in self.local("ip a show dev eth0", capture=True).split('\n'):
+        for line in self.exec_on_ctn("ip a show dev eth0").split('\n'):
             if line.strip().startswith("inet "):
                 elems = [e.strip() for e in line.strip().split(' ')]
                 ipv4 = elems[1]
@@ -264,70 +368,30 @@ class Container(object):
                            ifname='eth0')
         return 0
 
-    def stop(self):
-        ret = None
-        if self.id:
-            ctn_id = self.id
-        else:
-            ctn_id = self.docker_name()
-        for i in range(3):
-            if self.exist():
-                try:
-                    ret = local(
-                        "sudo docker stop -t 0 " + ctn_id, capture=True)
-                    self.is_running = False
-                    return ret
-                except RuntimeError as e:
-                    ret = e
-                    time.sleep(1)
-                else:
-                    return ret
-            else:
-                return ret
-        return ret
+    def stop(self, check_exist=True):
+        if check_exist:
+            if not self.exist(allctn=False):
+                return
+        ctn_id = self.get_docker_id()
+        out = self.dcexec_retry('docker stop -t 0 ' + ctn_id)
+        self.is_running = False
+        return out
 
-    def remove(self):
-        ret = None
-        if self.id:
-            ctn_id = self.id
-        else:
-            ctn_id = self.docker_name()
-        for i in range(3):
-            if self.exist(all=True):
-                try:
-                    ret = local(
-                        "sudo docker rm -f " + ctn_id, capture=True)
-                    self.is_running = False
-                    return ret
-                except RuntimeError as e:
-                    ret = e
-                    time.sleep(1)
-                else:
-                    return ret
-            else:
-                return ret
-        return ret
-
-    def exist(self, all=False):
-        if self.id:
-            ctn_id = self.id
-        else:
-            ctn_id = self.docker_name()
-        cmd = 'sudo docker ps --no-trunc=true'
-        if all:
-            cmd += ' --all=true'
-        ret = local(cmd, capture=True)
-        if ctn_id in ret:
-            return True
-        else:
-            return False
+    def remove(self, check_exist=True):
+        if check_exist:
+            if not self.exist(allctn=True):
+                return
+        ctn_id = self.get_docker_id()
+        out = self.dcexec_retry('docker rm -f ' + ctn_id)
+        self.is_running = False
+        return out
 
     def pipework(self, bridge, ip_addr, intf_name=""):
         if not self.is_running:
             LOG.warning('Call run() before pipeworking')
             return
         c = CmdBuffer(' ')
-        c << "sudo pipework {0}".format(bridge.name)
+        c << "pipework {0}".format(bridge.name)
 
         if intf_name != "":
             c << "-i {0}".format(intf_name)
@@ -335,24 +399,12 @@ class Container(object):
             intf_name = "eth1"
         c << "{0} {1}".format(self.docker_name(), ip_addr)
         self.set_addr_info(bridge=bridge.name, ipv4=ip_addr, ifname=intf_name)
-        try_several_times(lambda: local(str(c)))
-
-    def local(self, cmd, capture=False, stream=False, detach=False):
-        if stream:
-            dckr = Client(timeout=120, version='auto')
-            i = dckr.exec_create(container=self.docker_name(), cmd=cmd)
-            return dckr.exec_start(i['Id'], tty=True,
-                                   stream=stream, detach=detach)
-        else:
-            flag = '-d' if detach else ''
-            return local('sudo docker exec {0} {1} {2}'.format(
-                flag, self.docker_name(), cmd), capture)
+        self.dcexec_retry(str(c))
 
     def get_pid(self):
         if self.is_running:
-            cmd = "sudo docker inspect -f '{{.State.Pid}}' "
-            cmd += self.docker_name()
-            return int(local(cmd, capture=True))
+            cmd = "docker inspect -f '{{.State.Pid}}' " + self.docker_name()
+            return int(self.dcexec(cmd))
         return -1
 
     def start_tcpdump(self, interface=None, filename=None):
@@ -361,8 +413,9 @@ class Container(object):
         if not filename:
             filename = "{0}/{1}.dump".format(
                 self.shared_volumes[0][1], interface)
-        self.local(
-            "tcpdump -i {0} -w {1}".format(interface, filename), detach=True)
+        self.exec_on_ctn(
+            "tcpdump -i {0} -w {1}".format(interface, filename),
+            detach=True)
 
 
 class BGPContainer(Container):
@@ -375,15 +428,16 @@ class BGPContainer(Container):
         if TEST_PREFIX:
             self.config_dir += '/' + TEST_PREFIX
         self.config_dir += '/' + name
-        local('if [ -e {0} ]; then rm -r {0}; fi'.format(self.config_dir))
-        local('mkdir -p {0}'.format(self.config_dir))
-        local('chmod 777 {0}'.format(self.config_dir))
         self.asn = asn
         self.router_id = router_id
         self.peers = {}
         self.routes = {}
         self.policies = {}
         super(BGPContainer, self).__init__(name, ctn_image_name)
+        self.execute(
+            'if [ -e {0} ]; then rm -r {0}; fi'.format(self.config_dir))
+        self.execute('mkdir -p {0}'.format(self.config_dir))
+        self.execute('chmod 777 {0}'.format(self.config_dir))
 
     def __repr__(self):
         return str({'name': self.name, 'asn': self.asn,
@@ -454,7 +508,7 @@ class BGPContainer(Container):
         raise Exception('implement enable_peer() method')
 
     def log(self):
-        return local('cat {0}/*.log'.format(self.config_dir), capture=True)
+        return self.execute('cat {0}/*.log'.format(self.config_dir))
 
     def add_route(self, route, rf='ipv4', attribute=None, aspath=None,
                   community=None, med=None, extendedcommunity=None,
@@ -528,7 +582,7 @@ class BGPContainer(Container):
             interval = 1
             count = 0
             while True:
-                res = self.local(cmd, capture=True)
+                res = self.exec_on_ctn(cmd)
                 LOG.info(res)
                 if '1 packets received' in res and '0% packet loss':
                     break
@@ -556,11 +610,11 @@ class BGPContainer(Container):
 
     def add_static_route(self, network, next_hop):
         cmd = '/sbin/ip route add {0} via {1}'.format(network, next_hop)
-        self.local(cmd)
+        self.exec_on_ctn(cmd)
 
     def set_ipv6_forward(self):
         cmd = 'sysctl -w net.ipv6.conf.all.forwarding=1'
-        self.local(cmd)
+        self.exec_on_ctn(cmd)
 
     def create_config(self):
         raise Exception('implement create_config() method')

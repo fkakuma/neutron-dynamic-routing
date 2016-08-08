@@ -139,7 +139,10 @@ class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
     @classmethod
     def resource_cleanup(cls):
         for ctn in cls.containers:
-            ctn.stop()
+            try:
+                ctn.stop()
+            except ctn_base.FabricError as e:
+                pass
             ctn.remove()
         super(BgpSpeakerTestJSONBase, cls).resource_cleanup()
 

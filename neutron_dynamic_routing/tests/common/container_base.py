@@ -70,7 +70,7 @@ def get_bridges():
 
 def get_containers():
     return try_several_times(lambda: local(
-        "docker ps -a | awk 'NR > 1 {print $NF}'", capture=True)).split('\n')
+        "sudo docker ps -a | awk 'NR > 1 {print $NF}'", capture=True)).split('\n')
 
 
 class DockerImage(object):
@@ -129,10 +129,10 @@ class Bridge(object):
             def f():
                 if self.name in get_bridges():
                     self.delete()
-                local("ip link add {0} type bridge".format(self.name))
+                local("sudo ip link add {0} type bridge".format(self.name))
             try_several_times(f)
         try_several_times(lambda: local(
-            "ip link set up dev {0}".format(self.name)))
+            "sudo ip link set up dev {0}".format(self.name)))
 
         self.self_ip = self_ip
         if self_ip:
@@ -147,7 +147,8 @@ class Bridge(object):
                         "sudo ip addr del {0} dev {1}".format(
                             ip, self.name)))
             try_several_times(lambda: local(
-                "ip addr add {0} dev {1}".format(self.ip_addr, self.name)))
+                "sudo ip addr add {0} dev {1}".format(
+                    self.ip_addr, self.name)))
         self.ctns = []
 
     def check_br_addr(self, br):
@@ -179,9 +180,9 @@ class Bridge(object):
 
     def delete(self):
         try_several_times(lambda: local(
-            "ip link set down dev {0}".format(self.name)))
+            "sudo ip link set down dev {0}".format(self.name)))
         try_several_times(lambda: local(
-            "ip link delete {0} type bridge".format(self.name)))
+            "sudo ip link delete {0} type bridge".format(self.name)))
 
 
 class Container(object):
@@ -228,7 +229,7 @@ class Container(object):
 
     def run(self):
         c = CmdBuffer(' ')
-        c << "docker run --privileged=true"
+        c << "sudo docker run --privileged=true"
         for sv in self.shared_volumes:
             c << "-v {0}:{1}".format(sv[0], sv[1])
         c << "--name {0} --hostname {0} -id {1}".format(self.docker_name(),
@@ -253,7 +254,7 @@ class Container(object):
 
     def remove(self):
         ret = try_several_times(lambda: local(
-            "docker rm -f " + self.docker_name(), capture=True))
+            "sudo docker rm -f " + self.docker_name(), capture=True))
         self.is_running = False
         return ret
 
@@ -262,7 +263,7 @@ class Container(object):
             print colors.yellow('call run() before pipeworking')
             return
         c = CmdBuffer(' ')
-        c << "pipework {0}".format(bridge.name)
+        c << "sudo pipework {0}".format(bridge.name)
 
         if intf_name != "":
             c << "-i {0}".format(intf_name)
@@ -280,12 +281,13 @@ class Container(object):
                                    stream=stream, detach=detach)
         else:
             flag = '-d' if detach else ''
-            return local('docker exec {0} {1} {2}'.format(
+            return local('sudo docker exec {0} {1} {2}'.format(
                 flag, self.docker_name(), cmd), capture)
 
     def get_pid(self):
         if self.is_running:
-            cmd = "docker inspect -f '{{.State.Pid}}' " + self.docker_name()
+            cmd = "sudo docker inspect -f '{{.State.Pid}}' "
+            cmd += self.docker_name()
             return int(local(cmd, capture=True))
         return -1
 
@@ -296,7 +298,8 @@ class Container(object):
             filename = "{0}/{1}.dump".format(
                 self.shared_volumes[0][1], interface)
         self.local(
-            "tcpdump -i {0} -w {1}".format(interface, filename), detach=True)
+            "sudo tcpdump -i {0} -w {1}".format(interface, filename),
+            detach=True)
 
 
 class BGPContainer(Container):
@@ -487,11 +490,11 @@ class BGPContainer(Container):
                 raise Exception('timeout')
 
     def add_static_route(self, network, next_hop):
-        cmd = '/sbin/ip route add {0} via {1}'.format(network, next_hop)
+        cmd = 'sudo /sbin/ip route add {0} via {1}'.format(network, next_hop)
         self.local(cmd)
 
     def set_ipv6_forward(self):
-        cmd = 'sysctl -w net.ipv6.conf.all.forwarding=1'
+        cmd = 'sudo sysctl -w net.ipv6.conf.all.forwarding=1'
         self.local(cmd)
 
     def create_config(self):

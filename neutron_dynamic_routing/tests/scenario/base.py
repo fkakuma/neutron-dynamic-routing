@@ -22,7 +22,6 @@ from tempest import config
 from tempest.lib import exceptions as lib_exc
 from tempest import test
 
-from neutron.common import utils
 from neutron.tests.tempest.api import base
 
 from neutron_dynamic_routing.tests.common import container_base as ctn_base
@@ -57,10 +56,10 @@ def _setup_client_args(auth_provider):
 class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
 
     checktime = 120
-    public_net = '172.24.6.0'
+    public_netwk = '172.24.6.0'
     public_gw = '172.24.6.1'
-    tenant_net = '10.10.0.0'
-    docker_net = '172.24.6.128'
+    tenant_netwk = '10.10.0.0'
+    docker_netwk = '172.24.6.128'
     AS = collections.namedtuple('AS', 'asn, router_id, adv_net')
     L_AS = AS(asn='64512', router_id='192.168.0.1', adv_net='10.10.0.0/24')
     R_AS = AS(asn='64522', router_id='192.168.0.2',
@@ -75,31 +74,6 @@ class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
                              'name': 'my-bgp-peer',
                              'peer_ip': None,
                              'auth_type': 'none'}
-
-    @classmethod
-    def setUpClass(cls):
-        cls.brex = ctn_base.Bridge(name='br-ex',
-                          subnet=cls.docker_net + '/24')
-        utils.execute(
-            ['ip', 'addr', 'add', public_gw + '/24', 'dev', cls.brex.name],
-            run_as_root=True)
-        utils.execute(
-            ['ip', 'link', 'set', public_gw + '/24', 'up'],
-            run_as_root=True)
-        # This is dummy container object which keep data passes to
-        # quagga container.
-        cls.dr = ctn_base.BGPContainer(name='dr', asn=int(self.L_AS.asn),
-                                       router_id=self.L_AS.router_id)
-        cls.dr.set_ip_addr(bridge='br-ex')
-        cls.dr.add_route(self.L_AS.adv_net)
-        cls.q1 = quagga.QuaggaBGPContainer(name='q1', asn=int(self.R_AS.asn),
-                                           router_id=self.R_AS.router_id)
-        cls.q1.add_route(self.R_AS.adv_net)
-        waite_time = cls.q1.run()
-        time.sleep(waite_time)
-        cls.brex.addif(cls.q1)
-        cls.quagga_ip = cls.brex.get_ip_addr(cls.brex)[0]
-        cls.q1.add_peer(cls.dr, bridge=cls.brex.name)
 
     def setUp(self):
         self.addCleanup(self.resource_cleanup)
@@ -125,6 +99,30 @@ class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
         if not test.is_extension_enabled('bgp_speaker', 'network'):
             msg = "BGP Speaker extension is not enabled."
             raise cls.skipException(msg)
+
+        cls.brex = ctn_base.Bridge(name='br-ex',
+                                   subnet=cls.docker_netwk + '/24',
+                                   start_ip='172.24.6.128',
+                                   end_ip='172.24.6.254',
+                                   exist=True, self_ip=True,
+                                   fixed_ip=cls.public_gw)
+        # This is dummy container object which keep data passes to
+        # quagga container.
+        cls.dr = ctn_base.BGPContainer(name='dr', asn=int(cls.L_AS.asn),
+                                       router_id=cls.L_AS.router_id)
+        cls.dr.set_ip_addr_manual(bridge='br-ex', ipv4=cls.public_gw)
+        cls.dr.add_route(cls.L_AS.adv_net)
+        # quagga container
+        dockerimg = ctn_base.DockerImage()
+        cls.q_img = dockerimg.create_quagga_image()
+        cls.q1 = quagga.QuaggaBGPContainer(name='q1', asn=int(cls.R_AS.asn),
+                                           router_id=cls.R_AS.router_id,
+                                           ctn_image_name=cls.q_img)
+        cls.q1.add_route(cls.R_AS.adv_net)
+        waite_time = cls.q1.run()
+        time.sleep(waite_time)
+        cls.quagga_ip = cls.brex.addif(cls.q1)
+        cls.q1.add_peer(cls.dr, bridge=cls.brex.name)
 
         cls.admin_routerports = []
         cls.admin_floatingips = []
@@ -180,10 +178,11 @@ class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
             is_admin=True,
             default_prefixlen=25,
             address_scope_id=addr_scope['id'],
-            prefixes=[public_net + '/8'])
+            prefixes=[self.public_netwk + '/8'])
         ext_subnet = self.create_subnet(
             {'id': ext_net['id']},
-            cidr=netaddr.IPNetwork(public_net + '/25'),
+            cidr=netaddr.IPNetwork(self.public_netwk + '/24'),
+            mask_bits=24,
             ip_version=4,
             client=self.admin_client,
             subnetpool_id=ext_subnetpool['id'])
@@ -194,10 +193,10 @@ class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
             'tenant-test-pool',
             default_prefixlen=24,
             address_scope_id=addr_scope['id'],
-            prefixes=[tenant_net + '/16'])
+            prefixes=[self.tenant_netwk + '/16'])
         tenant_subnet = self.create_subnet(
             {'id': tenant_net['id']},
-            cidr=netaddr.IPNetwork(tenant_net + '/24'),
+            cidr=netaddr.IPNetwork(self.tenant_netwk + '/24'),
             ip_version=4,
             subnetpool_id=tenant_subnetpool['id'])
         # router

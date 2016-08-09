@@ -1,5 +1,8 @@
 # Copyright (C) 2015 Nippon Telegraph and Telephone Corporation.
 #
+# This is based on the following
+#     https://github.com/fkakuma/gobgp.git
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -13,7 +16,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from fabric import colors
+from fabric.utils import indent
 from nsenter import Namespace
+import netaddr
 
 from neutron_dynamic_routing.tests.common import container_base as base  # noqa
 
@@ -23,11 +29,12 @@ class QuaggaBGPContainer(base.BGPContainer):
     WAIT_FOR_BOOT = 1
     SHARED_VOLUME = '/etc/quagga'
 
-    def __init__(self, name, asn, router_id, ctn_image_name=None, zebra=False):
+    def __init__(self, name, asn, router_id, ctn_image_name, zebra=False):
         super(QuaggaBGPContainer, self).__init__(name, asn, router_id,
                                                  ctn_image_name)
         self.shared_volumes.append((self.config_dir, self.SHARED_VOLUME))
         self.zebra = zebra
+        self._create_config_debian()
 
     def run(self):
         super(QuaggaBGPContainer, self).run()
@@ -101,11 +108,11 @@ class QuaggaBGPContainer(base.BGPContainer):
         attrs = []
         if 'metric' in info:
             med = info[info.index('metric') + 1]
-            attrs.append({'type': BGP_ATTR_TYPE_MULTI_EXIT_DISC,
+            attrs.append({'type': base.BGP_ATTR_TYPE_MULTI_EXIT_DISC,
                           'metric': int(med)})
         if 'localpref' in info:
             localpref = info[info.index('localpref') + 1]
-            attrs.append({'type': BGP_ATTR_TYPE_LOCAL_PREF,
+            attrs.append({'type': base.BGP_ATTR_TYPE_LOCAL_PREF,
                           'value': int(localpref)})
 
         rib.append({'prefix': prefix, 'nexthop': nexthop,
@@ -133,11 +140,11 @@ class QuaggaBGPContainer(base.BGPContainer):
             idx1 = info[2].index('= ')
             state = info[2][idx1+len('= '):]
             if state.startswith('Idle'):
-                return BGP_FSM_IDLE
+                return base.BGP_FSM_IDLE
             elif state.startswith('Active'):
-                return BGP_FSM_ACTIVE
+                return base.BGP_FSM_ACTIVE
             elif state.startswith('Established'):
-                return BGP_FSM_ESTABLISHED
+                return base.BGP_FSM_ESTABLISHED
             else:
                 return state
 
@@ -147,13 +154,49 @@ class QuaggaBGPContainer(base.BGPContainer):
         self.vtysh('clear ip bgp * soft', config=False)
 
     def create_config(self):
+        zebra='no'
         self._create_config_bgp()
         if self.zebra:
+            zebra='yes'
             self._create_config_zebra()
+        self._create_config_daemons(zebra)
+
+    def _create_config_debian(self):
+        c = base.CmdBuffer()
+        c << 'vtysh_enable=yes'
+        c << 'zebra_options="  --daemon -A 127.0.0.1"'
+        c << 'bgpd_options="   --daemon -A 127.0.0.1"'
+        c << 'ospfd_options="  --daemon -A 127.0.0.1"'
+        c << 'ospf6d_options=" --daemon -A ::1"'
+        c << 'ripd_options="   --daemon -A 127.0.0.1"'
+        c << 'ripngd_options=" --daemon -A ::1"'
+        c << 'isisd_options="  --daemon -A 127.0.0.1"'
+        c << 'babeld_options=" --daemon -A 127.0.0.1"'
+        c << 'watchquagga_enable=yes'
+        c << 'watchquagga_options=(--daemon)'
+        with open('{0}/debian.conf'.format(self.config_dir), 'w') as f:
+            print colors.yellow('[{0}\'s new config]'.format(self.name))
+            print colors.yellow(indent(str(c)))
+            f.writelines(str(c))
+
+    def _create_config_daemons(self, zebra='no'):
+        c = base.CmdBuffer()
+        c << 'zebra=%s' % zebra
+        c << 'bgpd=yes'
+        c << 'ospfd=no'
+        c << 'ospf6d=no'
+        c << 'ripd=no'
+        c << 'ripngd=no'
+        c << 'isisd=no'
+        c << 'babeld=no'
+        with open('{0}/daemons'.format(self.config_dir), 'w') as f:
+            print colors.yellow('[{0}\'s new config]'.format(self.name))
+            print colors.yellow(indent(str(c)))
+            f.writelines(str(c))
 
     def _create_config_bgp(self):
 
-        c = CmdBuffer()
+        c = base.CmdBuffer()
         c << 'hostname bgpd'
         c << 'password zebra'
         c << 'router bgp {0}'.format(self.asn)
@@ -257,7 +300,7 @@ class QuaggaBGPContainer(base.BGPContainer):
 
 
 class RawQuaggaBGPContainer(QuaggaBGPContainer):
-    def __init__(self, name, config, ctn_image_name='osrg/quagga',
+    def __init__(self, name, config, ctn_image_name,
                  zebra=False):
         asn = None
         router_id = None

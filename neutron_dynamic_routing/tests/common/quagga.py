@@ -1,5 +1,8 @@
 # Copyright (C) 2015 Nippon Telegraph and Telephone Corporation.
 #
+# This is based on the following
+#     https://github.com/fkakuma/gobgp.git
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -13,6 +16,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from fabric import colors
+from fabric.utils import indent
 from nsenter import Namespace
 
 from neutron_dynamic_routing.tests.common import container_base as base  # noqa
@@ -101,11 +106,11 @@ class QuaggaBGPContainer(base.BGPContainer):
         attrs = []
         if 'metric' in info:
             med = info[info.index('metric') + 1]
-            attrs.append({'type': BGP_ATTR_TYPE_MULTI_EXIT_DISC,
+            attrs.append({'type': base.BGP_ATTR_TYPE_MULTI_EXIT_DISC,
                           'metric': int(med)})
         if 'localpref' in info:
             localpref = info[info.index('localpref') + 1]
-            attrs.append({'type': BGP_ATTR_TYPE_LOCAL_PREF,
+            attrs.append({'type': base.BGP_ATTR_TYPE_LOCAL_PREF,
                           'value': int(localpref)})
 
         rib.append({'prefix': prefix, 'nexthop': nexthop,
@@ -133,11 +138,11 @@ class QuaggaBGPContainer(base.BGPContainer):
             idx1 = info[2].index('= ')
             state = info[2][idx1+len('= '):]
             if state.startswith('Idle'):
-                return BGP_FSM_IDLE
+                return base.BGP_FSM_IDLE
             elif state.startswith('Active'):
-                return BGP_FSM_ACTIVE
+                return base.BGP_FSM_ACTIVE
             elif state.startswith('Established'):
-                return BGP_FSM_ESTABLISHED
+                return base.BGP_FSM_ESTABLISHED
             else:
                 return state
 
@@ -153,7 +158,7 @@ class QuaggaBGPContainer(base.BGPContainer):
 
     def _create_config_bgp(self):
 
-        c = CmdBuffer()
+        c = base.CmdBuffer()
         c << 'hostname bgpd'
         c << 'password zebra'
         c << 'router bgp {0}'.format(self.asn)

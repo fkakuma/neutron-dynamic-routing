@@ -1,5 +1,8 @@
 # Copyright (C) 2015 Nippon Telegraph and Telephone Corporation.
 #
+# This is based on the following
+#     https://github.com/fkakuma/gobgp.git
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -83,7 +86,8 @@ class CmdBuffer(list):
 
 
 class Bridge(object):
-    def __init__(self, name, subnet='', with_ip=True, self_ip=False):
+    def __init__(self, name, subnet='', with_ip=True, self_ip=False,
+                 fixed_ip=None, exist=False):
         self.name = name
         if TEST_PREFIX != '':
             self.name = '{0}_{1}'.format(TEST_PREFIX, name)
@@ -98,20 +102,42 @@ class Bridge(object):
             # throw away first network address
             self.next_ip_address()
 
-        def f():
-            if self.name in get_bridges():
-                self.delete()
-            local("ip link add {0} type bridge".format(self.name))
-        try_several_times(f)
+        if not exist:
+            def f():
+                if self.name in get_bridges():
+                    self.delete()
+                local("ip link add {0} type bridge".format(self.name))
+            try_several_times(f)
         try_several_times(lambda: local(
             "ip link set up dev {0}".format(self.name)))
 
         self.self_ip = self_ip
         if self_ip:
-            self.ip_addr = self.next_ip_address()
+            if fixed_ip:
+                self.ip_addr = fixed_ip
+            else:
+                self.ip_addr = self.next_ip_address()
+            ips = self.check_br_addr(self.name)
+            for key, ip in ips.items():
+                if self.subnet.version == key:
+                    try_several_times(lambda: local(
+                        "sudo ip addr del {0} dev {1}".format(
+                            ip, self.name)))
             try_several_times(lambda: local(
                 "ip addr add {0} dev {1}".format(self.ip_addr, self.name)))
         self.ctns = []
+
+    def check_br_addr(self, br):
+        ips = {}
+        cmd = "ip a show dev %s" % br
+        for line in local(cmd, capture=True).split('\n'):
+            if line.strip().startswith("inet "):
+                elems = [e.strip() for e in line.strip().split(' ')]
+                ips[4] = elems[1]
+            elif line.strip().startswith("inet6 "):
+                elems = [e.strip() for e in line.strip().split(' ')]
+                ips[6] = elems[1]
+        return ips
 
     def next_ip_address(self):
         return "{0}/{1}".format(self._ip_generator.next(),
@@ -164,15 +190,11 @@ class Container(object):
             local('rm -rf ' + tmp_dir)
         self.image = tag
 
-    def set_ip_addrs(self, bridge):
-        for line in self.local(
-                "ip a show dev %s" % bridge, capture=True).split('\n'):
-            if line.strip().startswith("inet "):
-                elems = [e.strip() for e in line.strip().split(' ')]
-                self.ip_addrs.append(('eth0', elems[1], bridge))
-            elif line.strip().startswith("inet6 "):
-                elems = [e.strip() for e in line.strip().split(' ')]
-                self.ip6_addrs.append(('eth0', elems[1], bridge))
+    def set_ip_addr_manual(self, bridge, ipv4=None, ipv6=None, ifname='eth0'):
+        if ipv4:
+            self.ip_addrs.append((ifname, ipv4, bridge))
+        if ipv6:
+            self.ip6_addrs.append((ifname, ipv6, bridge))
 
     def get_ip_addrs(self, bridge, ipv=4):
         ips = []
@@ -192,7 +214,8 @@ class Container(object):
         c << "docker run --privileged=true"
         for sv in self.shared_volumes:
             c << "-v {0}:{1}".format(sv[0], sv[1])
-        c << "--name {0} -id {1}".format(self.docker_name(), self.image)
+        c << "--name {0} --hostname {0} -id {1}".format(self.docker_name(),
+                                                        self.image)
         self.id = try_several_times(lambda: local(str(c), capture=True))
         self.is_running = True
         self.local("ip li set up dev lo")
@@ -264,7 +287,7 @@ class BGPContainer(Container):
     WAIT_FOR_BOOT = 1
     RETRY_INTERVAL = 5
 
-    def __init__(self, name, asn, router_id, ctn_image_name):
+    def __init__(self, name, asn, router_id, ctn_image_name=None):
         self.config_dir = '/'.join((TEST_BASE_DIR, TEST_PREFIX, name))
         local('if [ -e {0} ]; then rm -r {0}; fi'.format(self.config_dir))
         local('mkdir -p {0}'.format(self.config_dir))

@@ -73,6 +73,29 @@ def get_containers():
         "docker ps -a | awk 'NR > 1 {print $NF}'", capture=True)).split('\n')
 
 
+class DockerImage(object):
+    def __init__(self, baseimage='ubuntu:14.04.4'):
+        self.baseimage = baseimage
+
+    def create_quagga_image(self, tagname='quagga'):
+        workdir = TEST_BASE_DIR + '/' + tagname
+        c = CmdBuffer()
+        c << 'FROM ' + self.baseimage
+        c << 'RUN apt-get update'
+        c << 'RUN apt-get install -qy --no-install-recommends quagga'
+        c << 'CMD /usr/lib/quagga/bgpd'
+
+        local('mkdir -p {0}'.format(workdir))
+        with lcd(workdir):
+            local('echo \'{0}\' > Dockerfile'.format(str(c)))
+            self.build_image(tagname, workdir)
+            local('rm -rf ' + workdir)
+        return tagname
+
+    def build_image(self, tagname, dockerfile_dir):
+        local("sudo docker build -t {0} {1}".format(tagname, dockerfile_dir))
+
+
 class CmdBuffer(list):
     def __init__(self, delim='\n'):
         super(CmdBuffer, self).__init__()
@@ -146,11 +169,13 @@ class Bridge(object):
     def addif(self, ctn):
         name = ctn.next_if_name()
         self.ctns.append(ctn)
+        ip_address = None
         if self.with_ip:
-
-            ctn.pipework(self, self.next_ip_address(), name)
+            ip_address = self.next_ip_address()
+            ctn.pipework(self, ip_address, name)
         else:
             ctn.pipework(self, '0/0', name)
+        return ip_address
 
     def delete(self):
         try_several_times(lambda: local(
@@ -181,14 +206,6 @@ class Container(object):
         name = 'eth{0}'.format(len(self.eths)+1)
         self.eths.append(name)
         return name
-
-    def build_image(tag='bgpd:1.0', dockerfile_dir=None):
-        tmp_dir = DEFAULT_TEST_BASE_DIR + '/' + self.docker_name()
-        with lcd(dockerfile_dir):
-            local('cp -r {0} {1}'.format(dockerfile_dir, tmp_dir))
-            local('docker build -t ' + tag + tmp_dir)
-            local('rm -rf ' + tmp_dir)
-        self.image = tag
 
     def set_ip_addr_manual(self, bridge, ipv4=None, ipv6=None, ifname='eth0'):
         if ipv4:

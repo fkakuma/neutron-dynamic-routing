@@ -105,7 +105,7 @@ class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
                                    start_ip='172.24.6.128',
                                    end_ip='172.24.6.254',
                                    exist=True, self_ip=True,
-                                   fixed_ip=cls.public_gw)
+                                   fixed_ip=cls.public_gw + '/24')
         # This is dummy container object which keep data passes to
         # quagga container.
         cls.dr = ctn_base.BGPContainer(name='dr', asn=int(cls.L_AS.asn),
@@ -219,7 +219,7 @@ class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
         bgp_speaker_id = bgp_speaker['id']
         self.bgp_adm_client.add_bgp_gateway_network(bgp_speaker_id,
                                                     ext_net['id'])
-        self.default_bgp_peer_args['peer_ip'] = self.quagga_ip
+        self.default_bgp_peer_args['peer_ip'] = self.quagga_ip.split('/')[0]
         bgp_peer = self.create_bgp_peer(**self.default_bgp_peer_args)
         bgp_speaker_id = bgp_speaker['id']
         bgp_peer_id = bgp_peer['id']

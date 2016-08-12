@@ -29,11 +29,10 @@ then
 
 elif [[ "$VENV" == dsvm-scenario* ]]
 then
-    DEVSTACK_LOCAL_CONFIG="NEUTRON_CREATE_INITIAL_NETWORKS=False"
-    DEVSTACK_LOCAL_CONFIG+=$'\n'"enable_plugin $PROJECT_NAME https://git.openstack.org/openstack/$PROJECT_NAME"
-    export DEVSTACK_LOCAL_CONFIG
+    source $DEVSTACK_PATH/functions
+    sudo usermod -aG sudo tempest
 
-    $BASE/new/devstack-gate/devstack-vm-gate.sh
+    $GATE_DEST/devstack-gate/devstack-vm-gate.sh
 
 else
     echo "Unrecognized environment $VENV".

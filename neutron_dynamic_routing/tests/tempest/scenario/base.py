@@ -230,7 +230,7 @@ class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
         bgp_speaker_id = bgp_speaker['id']
         self.bgp_adm_client.add_bgp_gateway_network(bgp_speaker_id,
                                                     ext_net['id'])
-        self.default_bgp_peer_args['peer_ip'] = self.quagga_ip
+        self.default_bgp_peer_args['peer_ip'] = self.quagga_ip.split('/')[0]
         bgp_peer = self.create_bgp_peer(**self.default_bgp_peer_args)
         bgp_speaker_id = bgp_speaker['id']
         bgp_peer_id = bgp_peer['id']

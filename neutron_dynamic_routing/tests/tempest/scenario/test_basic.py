@@ -20,7 +20,7 @@ from tempest import config
 from tempest.lib import exceptions as lib_exc
 from tempest import test
 
-from neutron_dynamic_routing.tests.scenario import base
+from neutron_dynamic_routing.tests.tempest.scenario import base
 from neutron_dynamic_routing.tests.tempest import bgp_client
 
 from neutron_dynamic_routing.tests.common import container_base as ctn_base

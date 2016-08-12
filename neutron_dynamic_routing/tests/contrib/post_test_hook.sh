@@ -44,18 +44,3 @@ then
     generate_testr_results
     exit $testr_exit_code
 fi
-if [[ "$VENV" == dsvm-scenario* ]]
-then
-    cd $DR_PATH
-
-    # Run tests
-    echo "Running $PROJECT_NAME $VENV test suite"
-    set +e
-    sudo -H -u $OWNER $SUDO_ENV tox -e $VENV
-    testr_exit_code=$?
-    set -e
-
-    # Collect and parse results
-    generate_testr_results
-    exit $testr_exit_code
-fi

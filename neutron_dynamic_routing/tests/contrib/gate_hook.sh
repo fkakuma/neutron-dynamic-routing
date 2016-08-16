@@ -30,6 +30,7 @@ then
 elif [[ "$VENV" == dsvm-scenario* ]]
 then
     source $DEVSTACK_PATH/functions
+    sudo usermod -aG sudo tempest
     sh $DR_PATH/tools/install_scenario_pkg.sh
 
     $GATE_DEST/devstack-gate/devstack-vm-gate.sh

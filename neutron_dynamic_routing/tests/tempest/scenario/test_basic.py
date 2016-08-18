@@ -54,5 +54,5 @@ class BgpSpeakerBasicTest(base.BgpSpeakerTestJSONBase):
                 break
             time.sleep(1)
         self.assertEqual(neighbor_state, ctn_base.BGP_FSM_ESTABLISHED)
-        rib = self.q1.get_global_rib(prefix=self.tenant_netwk + '/24')
-        self.assertEqual(self.router_gw, rib[0]['nethop'])
+        rib = self.q1.get_global_rib(prefix=self.TNet.cidr)
+        self.assertEqual(self.router_pub_ip, rib[0]['nexthop'])

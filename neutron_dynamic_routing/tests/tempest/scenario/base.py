@@ -56,10 +56,10 @@ def _setup_client_args(auth_provider):
 class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
 
     checktime = 120
-    public_netwk = '172.24.6.0'
     public_gw = '172.24.6.1'
-    tenant_netwk = '10.10.0.0'
-    docker_netwk = '172.24.6.128'
+    Net = collections.namedtuple('Net', 'net, mask, cidr, rip')
+    PNet = Net(net='172.24.6.0', mask=24, cidr='172.24.6.0/24', rip=None)
+    TNet = Net(net='10.10.0.0', mask=28, cidr='10.10.0.0/28', rip=None)
     AS = collections.namedtuple('AS', 'asn, router_id, adv_net')
     L_AS = AS(asn='64512', router_id='192.168.0.1', adv_net='10.10.0.0/24')
     R_AS = AS(asn='64522', router_id='192.168.0.2',
@@ -101,7 +101,7 @@ class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
             raise cls.skipException(msg)
 
         cls.brex = ctn_base.Bridge(name='br-ex',
-                                   subnet=cls.docker_netwk + '/24',
+                                   subnet=cls.PNet.cidr,
                                    start_ip='172.24.6.128',
                                    end_ip='172.24.6.254',
                                    exist=True, self_ip=True,
@@ -176,13 +176,13 @@ class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
         ext_subnetpool = self.create_subnetpool(
             'test-pool-ext',
             is_admin=True,
-            default_prefixlen=25,
+            default_prefixlen=self.PNet.mask,
             address_scope_id=addr_scope['id'],
-            prefixes=[self.public_netwk + '/8'])
+            prefixes=[self.PNet.net + '/8'])
         ext_subnet = self.create_subnet(
             {'id': ext_net['id']},
-            cidr=netaddr.IPNetwork(self.public_netwk + '/24'),
-            mask_bits=24,
+            cidr=netaddr.IPNetwork(self.PNet.cidr),
+            mask_bits=self.PNet.mask,
             ip_version=4,
             client=self.admin_client,
             subnetpool_id=ext_subnetpool['id'])
@@ -193,10 +193,11 @@ class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
             'tenant-test-pool',
             default_prefixlen=24,
             address_scope_id=addr_scope['id'],
-            prefixes=[self.tenant_netwk + '/16'])
+            prefixes=[self.TNet.net + '/16'])
         tenant_subnet = self.create_subnet(
             {'id': tenant_net['id']},
-            cidr=netaddr.IPNetwork(self.tenant_netwk + '/24'),
+            cidr=netaddr.IPNetwork(self.TNet.cidr),
+            mask_bits=self.TNet.mask,
             ip_version=4,
             subnetpool_id=tenant_subnetpool['id'])
         # router
@@ -213,7 +214,7 @@ class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
                                        'subnet_id': tenant_subnet['id']})
         router = self.admin_client.show_router(router_cr['id'])['router']
         fixed_ips = router['external_gateway_info']['external_fixed_ips']
-        self.router_gw = fixed_ips[0]['ip_address']
+        self.router_pub_ip = fixed_ips[0]['ip_address']
         # speaker
         bgp_speaker = self.create_bgp_speaker(**self.default_bgp_speaker_args)
         bgp_speaker_id = bgp_speaker['id']

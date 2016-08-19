@@ -16,12 +16,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from fabric import colors
+import logging
+
 from fabric.utils import indent
 from nsenter import Namespace
 import netaddr
 
 from neutron_dynamic_routing.tests.common import container_base as base  # noqa
+
+LOG = logging.getLogger(__name__)
 
 
 class QuaggaBGPContainer(base.BGPContainer):
@@ -175,8 +178,8 @@ class QuaggaBGPContainer(base.BGPContainer):
         c << 'watchquagga_enable=yes'
         c << 'watchquagga_options=(--daemon)'
         with open('{0}/debian.conf'.format(self.config_dir), 'w') as f:
-            print colors.yellow('[{0}\'s new config]'.format(self.name))
-            print colors.yellow(indent(str(c)))
+            LOG.info('[{0}\'s new config]'.format(self.name))
+            LOG.info(indent(str(c)))
             f.writelines(str(c))
 
     def _create_config_daemons(self, zebra='no'):
@@ -190,8 +193,8 @@ class QuaggaBGPContainer(base.BGPContainer):
         c << 'isisd=no'
         c << 'babeld=no'
         with open('{0}/daemons'.format(self.config_dir), 'w') as f:
-            print colors.yellow('[{0}\'s new config]'.format(self.name))
-            print colors.yellow(indent(str(c)))
+            LOG.info('[{0}\'s new config]'.format(self.name))
+            LOG.info(indent(str(c)))
             f.writelines(str(c))
 
     def _create_config_bgp(self):
@@ -259,8 +262,8 @@ class QuaggaBGPContainer(base.BGPContainer):
         c << 'log file {0}/bgpd.log'.format(self.SHARED_VOLUME)
 
         with open('{0}/bgpd.conf'.format(self.config_dir), 'w') as f:
-            print colors.yellow('[{0}\'s new config]'.format(self.name))
-            print colors.yellow(indent(str(c)))
+            LOG.info('[{0}\'s new config]'.format(self.name))
+            LOG.info(indent(str(c)))
             f.writelines(str(c))
 
     def _create_config_zebra(self):
@@ -274,8 +277,8 @@ class QuaggaBGPContainer(base.BGPContainer):
         c << ''
 
         with open('{0}/zebra.conf'.format(self.config_dir), 'w') as f:
-            print colors.yellow('[{0}\'s new config]'.format(self.name))
-            print colors.yellow(indent(str(c)))
+            LOG.info('[{0}\'s new config]'.format(self.name))
+            LOG.info(indent(str(c)))
             f.writelines(str(c))
 
     def vtysh(self, cmd, config=True):
@@ -320,6 +323,6 @@ class RawQuaggaBGPContainer(QuaggaBGPContainer):
 
     def create_config(self):
         with open('{0}/bgpd.conf'.format(self.config_dir), 'w') as f:
-            print colors.yellow('[{0}\'s new config]'.format(self.name))
-            print colors.yellow(indent(self.config))
+            LOG.info('[{0}\'s new config]'.format(self.name))
+            LOG.info(indent(self.config))
             f.writelines(self.config)

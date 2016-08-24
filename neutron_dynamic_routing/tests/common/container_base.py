@@ -428,6 +428,20 @@ class BGPContainer(Container):
 
     WAIT_FOR_BOOT = 1
     RETRY_INTERVAL = 5
+    DEFAULT_PEER_ARG = {'neigh_addr': '',
+                        'passwd': None,
+                        'vpn': False,
+                        'flowspec': False,
+                        'is_rs_client': False,
+                        'is_rr_client': False,
+                        'cluster_id': None,
+                        'policies': None,
+                        'passive': False,
+                        'local_addr': '',
+                        'as2': False,
+                        'graceful_restart': None,
+                        'local_as': None,
+                        'prefix_limit': None}
 
     def __init__(self, name, asn, router_id, ctn_image_name=None):
         self.config_dir = TEST_BASE_DIR
@@ -454,12 +468,17 @@ class BGPContainer(Container):
         super(BGPContainer, self).run()
         return self.WAIT_FOR_BOOT
 
-    def add_peer(self, peer, passwd=None, vpn=False, is_rs_client=False,
-                 policies=None, passive=False,
-                 is_rr_client=False, cluster_id=None,
-                 flowspec=False, bridge='', reload_config=True, as2=False,
-                 graceful_restart=None, local_as=None, prefix_limit=None,
-                 v6=False):
+    def add_peer(self, peer, bridge='', reload_config=True, v6=False,
+                 peer_info={}):
+        self.peers[peer] = self.DEFAULT_PEER_ARG.copy()
+        self.peers[peer].update(peer_info)
+        peer_keys = self.peers[peer].keys()
+        default_keys = self.DEFAULT_PEER_ARG.keys()
+        peer_keys.sort()
+        default_keys.sort()
+        if peer_keys != default_keys:
+            raise Exception('argument error: {0}'.format(peer_info))
+
         neigh_addr = ''
         local_addr = ''
         it = itertools.product(self.ip_addrs, peer.ip_addrs)
@@ -480,23 +499,11 @@ class BGPContainer(Container):
         if neigh_addr == '':
             raise Exception('peer {0} seems not ip reachable'.format(peer))
 
-        if not policies:
-            policies = {}
+        if not self.peers[peer]['policies']:
+            self.peers[peer]['policies'] = {}
 
-        self.peers[peer] = {'neigh_addr': neigh_addr,
-                            'passwd': passwd,
-                            'vpn': vpn,
-                            'flowspec': flowspec,
-                            'is_rs_client': is_rs_client,
-                            'is_rr_client': is_rr_client,
-                            'cluster_id': cluster_id,
-                            'policies': policies,
-                            'passive': passive,
-                            'local_addr': local_addr,
-                            'as2': as2,
-                            'graceful_restart': graceful_restart,
-                            'local_as': local_as,
-                            'prefix_limit': prefix_limit}
+        self.peers[peer]['neigh_addr'] = neigh_addr
+        self.peers[peer]['local_addr'] = local_addr
         if self.is_running and reload_config:
             self.create_config()
             self.reload_config()

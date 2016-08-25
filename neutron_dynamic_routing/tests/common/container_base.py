@@ -186,9 +186,9 @@ class Bridge(object):
         if not reuse:
             if self.exist():
                 self.delete()
-            self.exec_retry(
-                "ip link add {0} type bridge".format(self.name))
-        self.exec_retry("ip link set up dev {0}".format(self.name))
+            self.execute(
+                "ip link add {0} type bridge".format(self.name), retry=True)
+        self.execute("ip link set up dev {0}".format(self.name), retry=True)
 
         self.self_ip = self_ip
         if self_ip:
@@ -199,14 +199,16 @@ class Bridge(object):
             ips = self.check_br_addr(self.name)
             for key, ip in ips.items():
                 if self.subnet.version == key:
-                    self.exec_retry(
-                        "ip addr del {0} dev {1}".format(ip, self.name))
-            self.exec_retry(
-                "ip addr add {0} dev {1}".format(self.ip_addr, self.name))
+                    self.execute(
+                        "ip addr del {0} dev {1}".format(ip, self.name),
+                        retry=True)
+            self.execute(
+                "ip addr add {0} dev {1}".format(self.ip_addr, self.name),
+                retry=True)
         self.ctns = []
 
     def get_bridges(self):
-        out = self.exec_retry('brctl show', capture=True)
+        out = self.execute('brctl show', capture=True, retry=True)
         bridges = []
         for line in out.splitlines()[1:]:
             bridges.append(line.split()[0])
@@ -218,17 +220,15 @@ class Bridge(object):
         else:
             return False
 
-    def execute(self, cmd, capture=False, sudo=True):
+    def execute(self, cmd, capture=False, sudo=True, retry=False):
         if sudo:
-            return self.cmd.sudo(cmd, capture=capture)
+            m = self.cmd.sudo
         else:
-            return self.cmd.execute(cmd, capture=capture)
-
-    def exec_retry(self, cmd, capture=False, sudo=True):
-        if sudo:
-            return self.cmd.sudo(cmd, capture=capture, times=3, interval=1)
+            m = self.cmd.execute
+        if retry:
+            return m(cmd, capture=capture, times=3, interval=1)
         else:
-            return self.cmd.execute(cmd, capture=capture, times=3, interval=1)
+            return m(cmd, capture=capture)
 
     def check_br_addr(self, br):
         ips = {}
@@ -258,9 +258,9 @@ class Bridge(object):
         return ip_address
 
     def delete(self):
-        self.exec_retry("ip link set down dev {0}".format(self.name))
-        self.exec_retry(
-            "ip link delete {0} type bridge".format(self.name))
+        self.execute("ip link set down dev {0}".format(self.name), retry=True)
+        self.execute(
+            "ip link delete {0} type bridge".format(self.name), retry=True)
 
 
 class Container(object):
@@ -312,14 +312,21 @@ class Container(object):
                 ips.append(addrs[1])
         return ips
 
-    def execute(self, cmd, capture=False):
-        return self.cmd.execute(cmd, capture=capture)
+    def execute(self, cmd, capture=False, sudo=False, retry=False):
+        if sudo:
+            m = self.cmd.sudo
+        else:
+            m = self.cmd.execute
+        if retry:
+            return m(cmd, capture=capture, times=3, interval=1)
+        else:
+            return m(cmd, capture=capture)
 
-    def dcexec(self, cmd, capture=False):
-        return self.cmd.sudo(cmd, capture=capture)
-
-    def dcexec_retry(self, cmd, capture=False):
-        return self.cmd.sudo(cmd, capture=capture, times=3, interval=1)
+    def dcexec(self, cmd, capture=False, retry=False):
+        if retry:
+            return self.cmd.sudo(cmd, capture=capture, times=3, interval=1)
+        else:
+            return self.cmd.sudo(cmd, capture=capture)
 
     def exec_on_ctn(self, cmd, capture=False, stream=False, detach=False):
         return self.cmd.container(self.docker_name(), cmd,
@@ -331,7 +338,7 @@ class Container(object):
         cmd = 'docker ps --no-trunc=true'
         if all:
             cmd += ' --all=true'
-        out = self.dcexec_retry(cmd, capture=True)
+        out = self.dcexec(cmd, capture=True, retry=True)
         containers = []
         for line in out.splitlines()[1:]:
             containers.append(line.split()[-1])
@@ -348,7 +355,7 @@ class Container(object):
         for i in range(3):
             try:
                 if self.exist(all=all):
-                    out = self.cmd.sudo(cmd, capture=capture)
+                    out = self.dcexec(cmd, capture=capture)
                     return out
                 else:
                     return out
@@ -363,7 +370,7 @@ class Container(object):
             c << "-v {0}:{1}".format(sv[0], sv[1])
         c << "--name {0} --hostname {0} -id {1}".format(self.docker_name(),
                                                         self.image)
-        self.id = self.dcexec_retry(str(c), capture=True)
+        self.id = self.dcexec(str(c), capture=True, retry=True)
         self.is_running = True
         self.exec_on_ctn("ip li set up dev lo")
         ipv4 = None
@@ -407,7 +414,7 @@ class Container(object):
             intf_name = "eth1"
         c << "{0} {1}".format(self.docker_name(), ip_addr)
         self.set_addr_info(bridge=bridge.name, ipv4=ip_addr, ifname=intf_name)
-        self.dcexec_retry(str(c))
+        self.execute(str(c), sudo=True, retry=True)
 
     def get_pid(self):
         if self.is_running:

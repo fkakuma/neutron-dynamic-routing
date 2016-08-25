@@ -72,7 +72,8 @@ def get_bridges():
 
 def get_containers():
     return try_several_times(lambda: local(
-        "docker ps -a | awk 'NR > 1 {print $NF}'", capture=True)).split('\n')
+        "sudo docker ps -a | awk 'NR > 1 {print $NF}'",
+        capture=True)).split('\n')
 
 
 class CmdBuffer(list):
@@ -108,7 +109,7 @@ class DockerImage(object):
         return tagname
 
     def build_image(self, tagname, dockerfile_dir):
-        local("docker build -t {0} {1}".format(tagname, dockerfile_dir))
+        local("sudo docker build -t {0} {1}".format(tagname, dockerfile_dir))
 
 
 class Bridge(object):
@@ -141,10 +142,10 @@ class Bridge(object):
             def f():
                 if self.name in get_bridges():
                     self.delete()
-                local("ip link add {0} type bridge".format(self.name))
+                local("sudo ip link add {0} type bridge".format(self.name))
             try_several_times(f)
         try_several_times(lambda: local(
-            "ip link set up dev {0}".format(self.name)))
+            "sudo ip link set up dev {0}".format(self.name)))
 
         self.self_ip = self_ip
         if self_ip:
@@ -156,10 +157,11 @@ class Bridge(object):
             for key, ip in ips.items():
                 if self.subnet.version == key:
                     try_several_times(lambda: local(
-                        "ip addr del {0} dev {1}".format(
+                        "sudo ip addr del {0} dev {1}".format(
                             ip, self.name)))
             try_several_times(lambda: local(
-                "ip addr add {0} dev {1}".format(self.ip_addr, self.name)))
+                "sudo ip addr add {0} dev {1}".format(
+                    self.ip_addr, self.name)))
         self.ctns = []
 
     def check_br_addr(self, br):
@@ -191,9 +193,9 @@ class Bridge(object):
 
     def delete(self):
         try_several_times(lambda: local(
-            "ip link set down dev {0}".format(self.name)))
+            "sudo ip link set down dev {0}".format(self.name)))
         try_several_times(lambda: local(
-            "ip link delete {0} type bridge".format(self.name)))
+            "sudo ip link delete {0} type bridge".format(self.name)))
 
 
 class Container(object):
@@ -241,7 +243,7 @@ class Container(object):
 
     def run(self):
         c = CmdBuffer(' ')
-        c << "docker run --privileged=true"
+        c << "sudo docker run --privileged=true"
         for sv in self.shared_volumes:
             c << "-v {0}:{1}".format(sv[0], sv[1])
         c << "--name {0} --hostname {0} -id {1}".format(self.docker_name(),
@@ -272,7 +274,7 @@ class Container(object):
             if self.exist():
                 try:
                     ret = local(
-                        "docker stop -t 0 " + ctn_id, capture=True)
+                        "sudo docker stop -t 0 " + ctn_id, capture=True)
                     self.is_running = False
                     return ret
                 except RuntimeError as e:
@@ -294,7 +296,7 @@ class Container(object):
             if self.exist(all=True):
                 try:
                     ret = local(
-                        "docker rm -f " + ctn_id, capture=True)
+                        "sudo docker rm -f " + ctn_id, capture=True)
                     self.is_running = False
                     return ret
                 except RuntimeError as e:
@@ -311,7 +313,7 @@ class Container(object):
             ctn_id = self.id
         else:
             ctn_id = self.docker_name()
-        cmd = 'docker ps --no-trunc=true'
+        cmd = 'sudo docker ps --no-trunc=true'
         if all:
             cmd += ' --all=true'
         ret = local(cmd, capture=True)
@@ -325,7 +327,7 @@ class Container(object):
             LOG.warning('Call run() before pipeworking')
             return
         c = CmdBuffer(' ')
-        c << "pipework {0}".format(bridge.name)
+        c << "sudo pipework {0}".format(bridge.name)
 
         if intf_name != "":
             c << "-i {0}".format(intf_name)
@@ -343,12 +345,13 @@ class Container(object):
                                    stream=stream, detach=detach)
         else:
             flag = '-d' if detach else ''
-            return local('docker exec {0} {1} {2}'.format(
+            return local('sudo docker exec {0} {1} {2}'.format(
                 flag, self.docker_name(), cmd), capture)
 
     def get_pid(self):
         if self.is_running:
-            cmd = "docker inspect -f '{{.State.Pid}}' " + self.docker_name()
+            cmd = "sudo docker inspect -f '{{.State.Pid}}' "
+            cmd += self.docker_name()
             return int(local(cmd, capture=True))
         return -1
 

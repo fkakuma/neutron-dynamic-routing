@@ -16,16 +16,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import time
 import itertools
 
 from fabric.api import local
 from fabric.api import lcd
-from fabric import colors
 from fabric.state import env
 from fabric.state import output
 from docker import Client
 import netaddr
+
+LOG = logging.getLogger(__name__)
 
 DEFAULT_TEST_PREFIX = ''
 DEFAULT_TEST_BASE_DIR = '/tmp/bgpcontainer'
@@ -173,7 +175,7 @@ class Bridge(object):
         return ips
 
     def next_ip_address(self):
-        return "{0}/{1}".format(self._ip_generator.next(),
+        return "{0}/{1}".format(next(self._ip_generator),
                                 self.subnet.prefixlen)
 
     def addif(self, ctn):
@@ -320,7 +322,7 @@ class Container(object):
 
     def pipework(self, bridge, ip_addr, intf_name=""):
         if not self.is_running:
-            print colors.yellow('call run() before pipeworking')
+            LOG.warning('Call run() before pipeworking')
             return
         c = CmdBuffer(' ')
         c << "pipework {0}".format(bridge.name)
@@ -524,7 +526,7 @@ class BGPContainer(Container):
             count = 0
             while True:
                 res = self.local(cmd, capture=True)
-                print colors.yellow(res)
+                LOG.info(res)
                 if '1 packets received' in res and '0% packet loss':
                     break
                 time.sleep(interval)
@@ -538,10 +540,9 @@ class BGPContainer(Container):
         count = 0
         while True:
             state = self.get_neighbor_state(peer)
-            y = colors.yellow
-            print y("{0}'s peer {1} state: {2}".format(self.router_id,
-                                                       peer.router_id,
-                                                       state))
+            LOG.info("{0}'s peer {1} state: {2}".format(self.router_id,
+                                                        peer.router_id,
+                                                        state))
             if state == expected_state:
                 return
 

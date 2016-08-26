@@ -16,12 +16,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from fabric import colors
+import logging
+
 from fabric.utils import indent
 from nsenter import Namespace
 import netaddr
 
 from neutron_dynamic_routing.tests.common import container_base as base  # noqa
+
+LOG = logging.getLogger(__name__)
 
 
 class QuaggaBGPContainer(base.BGPContainer):
@@ -175,8 +178,8 @@ class QuaggaBGPContainer(base.BGPContainer):
         c << 'watchquagga_enable=yes'
         c << 'watchquagga_options=(--daemon)'
         with open('{0}/debian.conf'.format(self.config_dir), 'w') as f:
-            print colors.yellow('[{0}\'s new config]'.format(self.name))
-            print colors.yellow(indent(str(c)))
+            LOG.info('[{0}\'s new config]'.format(self.name))
+            LOG.info(indent(str(c)))
             f.writelines(str(c))
 
     def _create_config_daemons(self, zebra='no'):
@@ -190,8 +193,8 @@ class QuaggaBGPContainer(base.BGPContainer):
         c << 'isisd=no'
         c << 'babeld=no'
         with open('{0}/daemons'.format(self.config_dir), 'w') as f:
-            print colors.yellow('[{0}\'s new config]'.format(self.name))
-            print colors.yellow(indent(str(c)))
+            LOG.info('[{0}\'s new config]'.format(self.name))
+            LOG.info(indent(str(c)))
             f.writelines(str(c))
 
     def _create_config_bgp(self):
@@ -201,11 +204,11 @@ class QuaggaBGPContainer(base.BGPContainer):
         c << 'password zebra'
         c << 'router bgp {0}'.format(self.asn)
         c << 'bgp router-id {0}'.format(self.router_id)
-        if any(info['graceful_restart'] for info in self.peers.itervalues()):
+        if any(info['graceful_restart'] for info in self.peers.values()):
             c << 'bgp graceful-restart'
 
         version = 4
-        for peer, info in self.peers.iteritems():
+        for peer, info in self.peers.items():
             version = netaddr.IPNetwork(info['neigh_addr']).version
             n_addr = info['neigh_addr'].split('/')[0]
             if version == 6:
@@ -214,7 +217,7 @@ class QuaggaBGPContainer(base.BGPContainer):
             c << 'neighbor {0} remote-as {1}'.format(n_addr, peer.asn)
             if info['is_rs_client']:
                 c << 'neighbor {0} route-server-client'.format(n_addr)
-            for typ, p in info['policies'].iteritems():
+            for typ, p in info['policies'].items():
                 c << 'neighbor {0} route-map {1} {2}'.format(n_addr, p['name'],
                                                              typ)
             if info['passwd']:
@@ -226,7 +229,7 @@ class QuaggaBGPContainer(base.BGPContainer):
                 c << 'neighbor {0} activate'.format(n_addr)
                 c << 'exit-address-family'
 
-        for route in self.routes.itervalues():
+        for route in self.routes.values():
             if route['rf'] == 'ipv4':
                 c << 'network {0}'.format(route['prefix'])
             elif route['rf'] == 'ipv6':
@@ -245,7 +248,7 @@ class QuaggaBGPContainer(base.BGPContainer):
             else:
                 c << 'redistribute connected'
 
-        for name, policy in self.policies.iteritems():
+        for name, policy in self.policies.items():
             c << 'access-list {0} {1} {2}'.format(name, policy['type'],
                                                   policy['match'])
             c << 'route-map {0} permit 10'.format(name)
@@ -259,8 +262,8 @@ class QuaggaBGPContainer(base.BGPContainer):
         c << 'log file {0}/bgpd.log'.format(self.SHARED_VOLUME)
 
         with open('{0}/bgpd.conf'.format(self.config_dir), 'w') as f:
-            print colors.yellow('[{0}\'s new config]'.format(self.name))
-            print colors.yellow(indent(str(c)))
+            LOG.info('[{0}\'s new config]'.format(self.name))
+            LOG.info(indent(str(c)))
             f.writelines(str(c))
 
     def _create_config_zebra(self):
@@ -274,8 +277,8 @@ class QuaggaBGPContainer(base.BGPContainer):
         c << ''
 
         with open('{0}/zebra.conf'.format(self.config_dir), 'w') as f:
-            print colors.yellow('[{0}\'s new config]'.format(self.name))
-            print colors.yellow(indent(str(c)))
+            LOG.info('[{0}\'s new config]'.format(self.name))
+            LOG.info(indent(str(c)))
             f.writelines(str(c))
 
     def vtysh(self, cmd, config=True):
@@ -320,6 +323,6 @@ class RawQuaggaBGPContainer(QuaggaBGPContainer):
 
     def create_config(self):
         with open('{0}/bgpd.conf'.format(self.config_dir), 'w') as f:
-            print colors.yellow('[{0}\'s new config]'.format(self.name))
-            print colors.yellow(indent(self.config))
+            LOG.info('[{0}\'s new config]'.format(self.name))
+            LOG.info(indent(self.config))
             f.writelines(self.config)

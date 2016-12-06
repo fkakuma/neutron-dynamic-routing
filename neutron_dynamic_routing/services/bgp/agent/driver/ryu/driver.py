@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import netaddr
 from oslo_log import log as logging
 from oslo_utils import encodeutils
 from ryu.services.protocols.bgp import bgpspeaker
@@ -124,8 +125,19 @@ class RyuBgpDriver(base.BgpDriverBase):
             password = encodeutils.to_utf8(password)
 
         # Notify Ryu about BGP Peer addition
+        if netaddr.valid_ipv4(peer_ip):
+            enable_ipv4 = True
+            enable_ipv6 = False
+        elif netaddr.valid_ipv6(peer_ip):
+            enable_ipv4 = False
+            enable_ipv6 = True
+        else:
+            raise bgp_driver_exc.InvalidParamType(param=peer_ip,
+                                                  param_type='ip-address')
         curr_speaker.neighbor_add(address=peer_ip,
                                   remote_as=peer_as,
+                                  enable_ipv4=enable_ipv4,
+                                  enable_ipv6=enable_ipv6,
                                   password=password,
                                   connect_mode=CONNECT_MODE_ACTIVE)
         LOG.info(_LI('Added BGP Peer %(peer)s for remote_as=%(as)d to '

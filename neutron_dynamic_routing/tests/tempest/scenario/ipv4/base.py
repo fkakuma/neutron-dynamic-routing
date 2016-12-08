@@ -173,7 +173,7 @@ class BgpSpeakerTestJSONBase(base.BaseAdminNetworkTest):
         self.addCleanup(self.bgp_adm_client.delete_bgp_peer, bgp_peer_id)
         return bgp_peer['bgp_peer']
 
-    def get_dr_agent_id(self):
+    def get_dragent_id(self):
         agents = self.admin_client.list_agents(
             agent_type="BGP dynamic routing agent")
         self.assertTrue(agents['agents'][0]['alive'])

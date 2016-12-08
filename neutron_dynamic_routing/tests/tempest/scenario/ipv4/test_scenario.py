@@ -31,8 +31,8 @@ class BgpSpeakerBasicTest(base.BgpSpeakerTestJSONBase):
     @test.idempotent_id('7f2acbc2-ff88-4a63-aa02-a2f9feb3f5b0')
     def test_check_neighbor_established(self):
         speaker, peer = self.create_bgp_network()
-        dr_agent_id = self.get_dr_agent_id()
-        self.add_bgp_speaker_to_dragent(dr_agent_id, speaker)
+        dragent_id = self.get_dragent_id()
+        self.add_bgp_speaker_to_dragent(dragent_id, speaker)
         neighbor_state = ctn_base.BGP_FSM_IDLE
         for i in range(0, self.checktime):
             neighbor_state = self.q1.get_neighbor_state(self.dr)
@@ -44,8 +44,8 @@ class BgpSpeakerBasicTest(base.BgpSpeakerTestJSONBase):
     @test.idempotent_id('f32245fc-aeab-4244-acfa-3af9dd662e8d')
     def test_check_advertised_tenant_network(self):
         speaker, peer = self.create_bgp_network()
-        dr_agent_id = self.get_dr_agent_id()
-        self.add_bgp_speaker_to_dragent(dr_agent_id, speaker)
+        dragent_id = self.get_dragent_id()
+        self.add_bgp_speaker_to_dragent(dragent_id, speaker)
         neighbor_state = ctn_base.BGP_FSM_IDLE
         for i in range(0, self.checktime):
             neighbor_state = self.q1.get_neighbor_state(self.dr)

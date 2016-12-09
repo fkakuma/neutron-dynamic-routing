@@ -30,7 +30,14 @@ class BgpSpeakerBasicTest(base.BgpSpeakerTestJSONBase):
 
     @test.idempotent_id('5194a8e2-95bd-49f0-872d-1e3e875ede32')
     def test_check_neighbor_established(self):
-        speaker, peer = self.create_bgp_network()
+        self.default_bgp_peer_args['peer_ip'] = self.q1_ip.split('/')[0]
+        speaker, peer = self.create_bgp_network(
+            6, self.MyScope,
+            self.PNet, self.PPool, self.PSubNet,
+            [[self.TNet, self.TPool, self.TSubNet]],
+            self.MyRouter,
+            self.default_bgp_speaker_args,
+            self.default_bgp_peer_args)
         dragent_id = self.get_dragent_id()
         self.add_bgp_speaker_to_dragent(dragent_id, speaker)
         neighbor_state = ctn_base.BGP_FSM_IDLE
@@ -43,7 +50,14 @@ class BgpSpeakerBasicTest(base.BgpSpeakerTestJSONBase):
 
     @test.idempotent_id('6a3483fc-8c8a-4387-bda6-c7061410e04b')
     def test_check_advertised_tenant_network(self):
-        speaker, peer = self.create_bgp_network()
+        self.default_bgp_peer_args['peer_ip'] = self.q1_ip.split('/')[0]
+        speaker, peer = self.create_bgp_network(
+            6, self.MyScope,
+            self.PNet, self.PPool, self.PSubNet,
+            [[self.TNet, self.TPool, self.TSubNet]],
+            self.MyRouter,
+            self.default_bgp_speaker_args,
+            self.default_bgp_peer_args)
         dragent_id = self.get_dragent_id()
         self.add_bgp_speaker_to_dragent(dragent_id, speaker)
         neighbor_state = ctn_base.BGP_FSM_IDLE

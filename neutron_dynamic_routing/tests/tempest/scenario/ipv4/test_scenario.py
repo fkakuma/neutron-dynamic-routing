@@ -30,19 +30,21 @@ class BgpSpeakerBasicTest(base.BgpSpeakerTestJSONBase):
 
     @test.idempotent_id('7f2acbc2-ff88-4a63-aa02-a2f9feb3f5b0')
     def test_check_neighbor_established(self):
-        self.default_bgp_peer_args['peer_ip'] = self.q1_ip.split('/')[0]
-        speaker, peer = self.create_bgp_network(
+        self.bgp_peer_args[0]['peer_ip'] = self.ras_ip[0].split('/')[0]
+        ext_net_id = self.create_bgp_network(
             4, self.MyScope,
             self.PNet, self.PPool, self.PSubNet,
             [[self.TNet, self.TPool, self.TSubNet]],
-            self.MyRouter,
-            self.default_bgp_speaker_args,
-            self.default_bgp_peer_args)
+            self.MyRouter)
+        speaker_id, peers_ids = self.create_bgp_speaker_and_peer(
+            ext_net_id,
+            self.bgp_speaker_args,
+            [self.bgp_peer_args[0]])
         dragent_id = self.get_dragent_id()
-        self.add_bgp_speaker_to_dragent(dragent_id, speaker)
+        self.add_bgp_speaker_to_dragent(dragent_id, speaker_id)
         neighbor_state = ctn_base.BGP_FSM_IDLE
         for i in range(0, self.checktime):
-            neighbor_state = self.q1.get_neighbor_state(self.dr)
+            neighbor_state = self.rass[0].get_neighbor_state(self.dr)
             if neighbor_state == ctn_base.BGP_FSM_ESTABLISHED:
                 break
             time.sleep(1)
@@ -50,22 +52,93 @@ class BgpSpeakerBasicTest(base.BgpSpeakerTestJSONBase):
 
     @test.idempotent_id('f32245fc-aeab-4244-acfa-3af9dd662e8d')
     def test_check_advertised_tenant_network(self):
-        self.default_bgp_peer_args['peer_ip'] = self.q1_ip.split('/')[0]
-        speaker, peer = self.create_bgp_network(
+        self.bgp_peer_args[0]['peer_ip'] = self.ras_ip[0].split('/')[0]
+        ext_net_id = self.create_bgp_network(
             4, self.MyScope,
             self.PNet, self.PPool, self.PSubNet,
             [[self.TNet, self.TPool, self.TSubNet]],
-            self.MyRouter,
-            self.default_bgp_speaker_args,
-            self.default_bgp_peer_args)
+            self.MyRouter)
+        speaker_id, peers_ids = self.create_bgp_speaker_and_peer(
+            ext_net_id,
+            self.bgp_speaker_args,
+            [self.bgp_peer_args[0]])
         dragent_id = self.get_dragent_id()
-        self.add_bgp_speaker_to_dragent(dragent_id, speaker)
+        self.add_bgp_speaker_to_dragent(dragent_id, speaker_id)
         neighbor_state = ctn_base.BGP_FSM_IDLE
         for i in range(0, self.checktime):
-            neighbor_state = self.q1.get_neighbor_state(self.dr)
+            neighbor_state = self.rass[0].get_neighbor_state(self.dr)
             if neighbor_state == ctn_base.BGP_FSM_ESTABLISHED:
                 break
             time.sleep(1)
         self.assertEqual(neighbor_state, ctn_base.BGP_FSM_ESTABLISHED)
-        rib = self.q1.get_global_rib(prefix=self.TNet.cidr)
+        rib = self.rass[0].get_global_rib(prefix=self.TNet.cidr)
         self.assertEqual(self.router_pub_ip, rib[0]['nexthop'])
+
+    @test.idempotent_id('e4961cc1-0c47-4081-a896-caaa9342ca75')
+    def test_check_neighbor_established_with_multiple_peers(self):
+        for i in range(0, self.RAS_MAX):
+            self.bgp_peer_args[i]['peer_ip'] = self.ras_ip[i].split('/')[0]
+        ext_net_id = self.create_bgp_network(
+            4, self.MyScope,
+            self.PNet, self.PPool, self.PSubNet,
+            [[self.TNet, self.TPool, self.TSubNet]],
+            self.MyRouter)
+        speaker_id, peers_ids = self.create_bgp_speaker_and_peer(
+            ext_net_id,
+            self.bgp_speaker_args,
+            self.bgp_peer_args)
+        dragent_id = self.get_dragent_id()
+        self.add_bgp_speaker_to_dragent(dragent_id, speaker_id)
+        neighbor_state = ctn_base.BGP_FSM_IDLE
+        ras_list = []
+        for i in range(0, self.RAS_MAX):
+            ras_list.append({'as': self.rass[i], 'check': False})
+        ok_ras = 0
+        for i in range(0, self.checktime):
+            for j in range(0, self.RAS_MAX):
+                if ras_list[j]['check']:
+                    continue
+                neighbor_state = ras_list[j]['as'].get_neighbor_state(self.dr)
+                if neighbor_state == ctn_base.BGP_FSM_ESTABLISHED:
+                    ras_list[j]['check'] = True
+                    ok_ras += 1
+            if ok_ras == self.RAS_MAX:
+                break
+            time.sleep(1)
+        self.assertEqual(ok_ras, self.RAS_MAX)
+
+    @test.idempotent_id('91971dfb-c129-4744-9fbb-ac4f9e8d56c0')
+    def test_check_advertised_tenant_network_with_multiple_peers(self):
+        for i in range(0, self.RAS_MAX):
+            self.bgp_peer_args[i]['peer_ip'] = self.ras_ip[i].split('/')[0]
+        ext_net_id = self.create_bgp_network(
+            4, self.MyScope,
+            self.PNet, self.PPool, self.PSubNet,
+            [[self.TNet, self.TPool, self.TSubNet]],
+            self.MyRouter)
+        speaker_id, peers_ids = self.create_bgp_speaker_and_peer(
+            ext_net_id,
+            self.bgp_speaker_args,
+            self.bgp_peer_args)
+        dragent_id = self.get_dragent_id()
+        self.add_bgp_speaker_to_dragent(dragent_id, speaker_id)
+        neighbor_state = ctn_base.BGP_FSM_IDLE
+        ras_list = []
+        for i in range(0, self.RAS_MAX):
+            ras_list.append({'as': self.rass[i], 'check': False})
+        ok_ras = 0
+        for i in range(0, self.checktime):
+            for j in range(0, self.RAS_MAX):
+                if ras_list[j]['check']:
+                    continue
+                neighbor_state = ras_list[j]['as'].get_neighbor_state(self.dr)
+                if neighbor_state == ctn_base.BGP_FSM_ESTABLISHED:
+                    ras_list[j]['check'] = True
+                    ok_ras += 1
+            if ok_ras == self.RAS_MAX:
+                break
+            time.sleep(1)
+        self.assertEqual(ok_ras, self.RAS_MAX)
+        for i in range(0, self.RAS_MAX):
+            rib = self.rass[i].get_global_rib(prefix=self.TNet.cidr)
+            self.assertEqual(self.router_pub_ip, rib[0]['nexthop'])

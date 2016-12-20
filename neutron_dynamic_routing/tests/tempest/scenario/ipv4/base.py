@@ -21,6 +21,7 @@ from ryu.tests.integrated.common import quagga
 
 class BgpSpeakerTestJSONBase(base.BgpSpeakerScenarioTestJSONBase):
 
+    RAS_MAX = 3
     public_gw = '172.24.6.1'
     MyScope = base.Scope(name='my-scope')
     PNet = base.Net(name='', net='172.24.6.0', mask=24,
@@ -34,19 +35,38 @@ class BgpSpeakerTestJSONBase(base.BgpSpeakerScenarioTestJSONBase):
                       prefixes=[TNet.net + '/16'])
     TSubNet = base.SubNet(name='', cidr=TNet.cidr, mask=TNet.mask)
     MyRouter = base.Router(name='my-router', gw='', dist=False)
-    L_AS = base.AS(asn='64512', router_id='192.168.0.1', adv_net=TNet.cidr)
-    R_AS = base.AS(asn='64522', router_id='192.168.0.2',
-                   adv_net='192.168.160.0/24')
+    L_AS = base.AS(asn='64512', router_id='192.168.0.2',
+                   adv_net=TNet.cidr)
+    ras_l = [
+        base.AS(asn='64522', router_id='192.168.0.12',
+                adv_net='192.168.162.0/24'),
+        base.AS(asn='64523', router_id='192.168.0.13',
+                adv_net='192.168.163.0/24'),
+        base.AS(asn='64524', router_id='192.168.0.14',
+                adv_net='192.168.164.0/24')
+    ]
 
-    default_bgp_speaker_args = {'local_as': L_AS.asn,
-                                'ip_version': 4,
-                                'name': 'my-bgp-speaker',
-                                'advertise_floating_ip_host_routes': True,
-                                'advertise_tenant_networks': True}
-    default_bgp_peer_args = {'remote_as': R_AS.asn,
-                             'name': 'my-bgp-peer',
-                             'peer_ip': None,
-                             'auth_type': 'none'}
+    bgp_speaker_args = {
+        'local_as': L_AS.asn,
+        'ip_version': 4,
+        'name': 'my-bgp-speaker1',
+        'advertise_floating_ip_host_routes': True,
+        'advertise_tenant_networks': True
+    }
+    bgp_peer_args = [
+        {'remote_as': ras_l[0].asn,
+         'name': 'my-bgp-peer1',
+         'peer_ip': None,
+         'auth_type': 'none'},
+        {'remote_as': ras_l[1].asn,
+         'name': 'my-bgp-peer2',
+         'peer_ip': None,
+         'auth_type': 'none'},
+        {'remote_as': ras_l[2].asn,
+         'name': 'my-bgp-peer3',
+         'peer_ip': None,
+         'auth_type': 'none'}
+    ]
 
     def setUp(self):
         super(BgpSpeakerTestJSONBase, self).setUp()
@@ -70,11 +90,14 @@ class BgpSpeakerTestJSONBase(base.BgpSpeakerScenarioTestJSONBase):
         cls.dockerimg = ctn_base.DockerImage()
         cls.q_img = cls.dockerimg.create_quagga(check_exist=True)
         cls.images.append(cls.q_img)
-        cls.q1 = quagga.QuaggaBGPContainer(name='q1', asn=int(cls.R_AS.asn),
-                                           router_id=cls.R_AS.router_id,
+        for i in range(cls.RAS_MAX):
+            qg = quagga.QuaggaBGPContainer(name='q' + str(i + 1),
+                                           asn=int(cls.ras_l[i].asn),
+                                           router_id=cls.ras_l[i].router_id,
                                            ctn_image_name=cls.q_img)
-        cls.containers.append(cls.q1)
-        cls.q1.add_route(cls.R_AS.adv_net)
-        cls.q1.run(wait=True)
-        cls.q1_ip = cls.brex.addif(cls.q1)
-        cls.q1.add_peer(cls.dr, bridge=cls.brex.name)
+            cls.containers.append(qg)
+            cls.rass.append(qg)
+            qg.add_route(cls.ras_l[i].adv_net)
+            qg.run(wait=True)
+            cls.ras_ip.append(cls.brex.addif(qg))
+            qg.add_peer(cls.dr, bridge=cls.brex.name)

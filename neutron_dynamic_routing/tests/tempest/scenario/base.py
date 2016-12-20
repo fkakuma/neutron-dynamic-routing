@@ -88,6 +88,8 @@ class BgpSpeakerScenarioTestJSONBase(base.BaseAdminNetworkTest):
 
         cls.images = []
         cls.containers = []
+        cls.r_ass = []
+        cls.r_as_ip = []
         cls.bridges = []
         cls.admin_routerports = []
         cls.admin_floatingips = []
@@ -147,12 +149,12 @@ class BgpSpeakerScenarioTestJSONBase(base.BaseAdminNetworkTest):
     # tnets[[neti1, pool1, subnet1], [net2, pool2, subnet2], ...]
     def create_bgp_network(self, ip_version, scope,
                            exnet, expool, exsubnet,
-                           tnets, router,
-                           bgp_speaker_args, bgp_peer_args):
+                           tnets, router):
         addr_scope = self.create_address_scope(scope.name,
                                                ip_version=ip_version)
         # external network
         ext_net = self.create_shared_network(**{'router:external': True})
+        ext_net_id = ext_net['id']
         ext_subnetpool = self.create_subnetpool(
             expool.name,
             is_admin=True,
@@ -160,7 +162,7 @@ class BgpSpeakerScenarioTestJSONBase(base.BaseAdminNetworkTest):
             address_scope_id=addr_scope['id'],
             prefixes=expool.prefixes)
         self.create_subnet(
-            {'id': ext_net['id']},
+            {'id': ext_net_id},
             cidr=netaddr.IPNetwork(exsubnet.cidr),
             mask_bits=exsubnet.mask,
             ip_version=ip_version,
@@ -181,7 +183,7 @@ class BgpSpeakerScenarioTestJSONBase(base.BaseAdminNetworkTest):
                 ip_version=ip_version,
                 subnetpool_id=tenant_subnetpool['id'])
         # router
-        ext_gw_info = {'network_id': ext_net['id']}
+        ext_gw_info = {'network_id': ext_net_id}
         router_cr = self.admin_client.create_router(
             router.name,
             external_gateway_info=ext_gw_info,
@@ -195,14 +197,19 @@ class BgpSpeakerScenarioTestJSONBase(base.BaseAdminNetworkTest):
         router = self.admin_client.show_router(router_cr['id'])['router']
         fixed_ips = router['external_gateway_info']['external_fixed_ips']
         self.router_pub_ip = fixed_ips[0]['ip_address']
-        # speaker
-        bgp_speaker = self.create_bgp_speaker(**bgp_speaker_args)
-        bgp_speaker_id = bgp_speaker['id']
-        self.bgp_adm_client.add_bgp_gateway_network(bgp_speaker_id,
-                                                    ext_net['id'])
-        bgp_peer = self.create_bgp_peer(**bgp_peer_args)
-        bgp_speaker_id = bgp_speaker['id']
-        bgp_peer_id = bgp_peer['id']
-        self.bgp_adm_client.add_bgp_peer_with_id(bgp_speaker_id,
-                                                 bgp_peer_id)
-        return (bgp_speaker_id, bgp_peer_id)
+        return ext_net_id
+
+    def create_bgp_speaker_and_peer(self, ext_net_id,
+                                    speaker_info, peer_infos):
+        speaker = self.create_bgp_speaker(**speaker_info)
+        speaker_id = speaker['id']
+        self.bgp_adm_client.add_bgp_gateway_network(speaker_id,
+                                                    ext_net_id)
+        peer_ids = []
+        for peer_args in peer_infos:
+            peer = self.create_bgp_peer(**peer_args)
+            peer_id = peer['id']
+            peer_ids.append(peer_id)
+            self.bgp_adm_client.add_bgp_peer_with_id(speaker_id,
+                                                     peer_id)
+        return (speaker_id, peer_ids)

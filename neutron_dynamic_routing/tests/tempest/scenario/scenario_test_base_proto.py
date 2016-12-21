@@ -34,7 +34,7 @@ class BgpSpeakerProtoTestBase(base.BgpSpeakerScenarioTestJSONBase):
             self.PNet, self.PPool, self.PSubNet,
             [[self.TNet, self.TPool, self.TSubNet]],
             self.MyRouter)
-        speaker_id, peers_ids = self.create_bgp_speaker_and_peer(
+        speaker_id, peers_ids = self.create_and_add_peers_to_speaker(
             ext_net_id,
             self.bgp_speaker_args,
             [self.bgp_peer_args[0]])
@@ -55,7 +55,7 @@ class BgpSpeakerProtoTestBase(base.BgpSpeakerScenarioTestJSONBase):
             self.PNet, self.PPool, self.PSubNet,
             [[self.TNet, self.TPool, self.TSubNet]],
             self.MyRouter)
-        speaker_id, peers_ids = self.create_bgp_speaker_and_peer(
+        speaker_id, peers_ids = self.create_and_add_peers_to_speaker(
             ext_net_id,
             self.bgp_speaker_args,
             [self.bgp_peer_args[0]])
@@ -81,7 +81,7 @@ class BgpSpeakerProtoTestBase(base.BgpSpeakerScenarioTestJSONBase):
             self.PNet, self.PPool, self.PSubNet,
             [[self.TNet, self.TPool, self.TSubNet]],
             self.MyRouter)
-        speaker_id, peers_ids = self.create_bgp_speaker_and_peer(
+        speaker_id, peers_ids = self.create_and_add_peers_to_speaker(
             ext_net_id,
             self.bgp_speaker_args,
             self.bgp_peer_args)
@@ -100,7 +100,7 @@ class BgpSpeakerProtoTestBase(base.BgpSpeakerScenarioTestJSONBase):
                 if neighbor_state == ctn_base.BGP_FSM_ESTABLISHED:
                     ras_list[j]['check'] = True
                     ok_ras += 1
-            if ok_ras == self.RAS_MAX:
+            if ok_ras >= self.RAS_MAX:
                 break
             time.sleep(1)
         self.assertEqual(ok_ras, self.RAS_MAX)
@@ -114,7 +114,7 @@ class BgpSpeakerProtoTestBase(base.BgpSpeakerScenarioTestJSONBase):
             self.PNet, self.PPool, self.PSubNet,
             [[self.TNet, self.TPool, self.TSubNet]],
             self.MyRouter)
-        speaker_id, peers_ids = self.create_bgp_speaker_and_peer(
+        speaker_id, peers_ids = self.create_and_add_peers_to_speaker(
             ext_net_id,
             self.bgp_speaker_args,
             self.bgp_peer_args)
@@ -133,7 +133,7 @@ class BgpSpeakerProtoTestBase(base.BgpSpeakerScenarioTestJSONBase):
                 if neighbor_state == ctn_base.BGP_FSM_ESTABLISHED:
                     ras_list[j]['check'] = True
                     ok_ras += 1
-            if ok_ras == self.RAS_MAX:
+            if ok_ras >= self.RAS_MAX:
                 break
             time.sleep(1)
         self.assertEqual(ok_ras, self.RAS_MAX)

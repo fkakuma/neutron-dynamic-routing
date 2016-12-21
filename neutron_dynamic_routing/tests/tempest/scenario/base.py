@@ -199,7 +199,7 @@ class BgpSpeakerScenarioTestJSONBase(base.BaseAdminNetworkTest):
         self.router_pub_ip = fixed_ips[0]['ip_address']
         return ext_net_id
 
-    def create_bgp_speaker_and_peer(self, ext_net_id,
+    def create_and_add_peers_to_speaker(self, ext_net_id,
                                     speaker_info, peer_infos):
         speaker = self.create_bgp_speaker(**speaker_info)
         speaker_id = speaker['id']

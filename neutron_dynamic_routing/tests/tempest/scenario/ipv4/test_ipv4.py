@@ -14,131 +14,115 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import time
-
 from tempest import config
 from tempest import test
 
-from neutron_dynamic_routing.tests.tempest.scenario.ipv4 import base
+from neutron_dynamic_routing.tests.tempest.scenario import base
+from neutron_dynamic_routing.tests.tempest.scenario import scenario_test_base_proto as test_base  # noqa
 
 from ryu.tests.integrated.common import docker_base as ctn_base
+from ryu.tests.integrated.common import quagga
 
 CONF = config.CONF
 
 
-class BgpSpeakerBasicTest(base.BgpSpeakerTestJSONBase):
+class BgpSpeakerIpv4Test(test_base.BgpSpeakerProtoTestBase):
+
+    RAS_MAX = 3
+    ip_version = 4
+    public_gw = '172.24.6.1'
+    MyScope = base.Scope(name='my-scope')
+    PNet = base.Net(name='', net='172.24.6.0', mask=24,
+                    cidr='172.24.6.0/24', router=None)
+    PPool = base.Pool(name='test-pool-ext', prefixlen=PNet.mask,
+                      prefixes=[PNet.net + '/8'])
+    PSubNet = base.SubNet(name='', cidr=PNet.cidr, mask=PNet.mask)
+    TNet = base.Net(name='', net='10.10.0.0', mask=28,
+                    cidr='10.10.0.0/28', router=None)
+    TPool = base.Pool(name='tenant-test-pool', prefixlen=TNet.mask,
+                      prefixes=[TNet.net + '/16'])
+    TSubNet = base.SubNet(name='', cidr=TNet.cidr, mask=TNet.mask)
+    MyRouter = base.Router(name='my-router', gw='', dist=False)
+    L_AS = base.AS(asn='64512', router_id='192.168.0.2', adv_net=TNet.cidr)
+    ras_l = [
+        base.AS(asn='64522', router_id='192.168.0.12',
+                adv_net='192.168.162.0/24'),
+        base.AS(asn='64523', router_id='192.168.0.13',
+                adv_net='192.168.163.0/24'),
+        base.AS(asn='64524', router_id='192.168.0.14',
+                adv_net='192.168.164.0/24')
+    ]
+
+    bgp_speaker_args = {
+        'local_as': L_AS.asn,
+        'ip_version': ip_version,
+        'name': 'my-bgp-speaker1',
+        'advertise_floating_ip_host_routes': True,
+        'advertise_tenant_networks': True
+    }
+    bgp_peer_args = [
+        {'remote_as': ras_l[0].asn,
+         'name': 'my-bgp-peer1',
+         'peer_ip': None,
+         'auth_type': 'none'},
+        {'remote_as': ras_l[1].asn,
+         'name': 'my-bgp-peer2',
+         'peer_ip': None,
+         'auth_type': 'none'},
+        {'remote_as': ras_l[2].asn,
+         'name': 'my-bgp-peer3',
+         'peer_ip': None,
+         'auth_type': 'none'}
+    ]
+
+    def setUp(self):
+        super(BgpSpeakerIpv4Test, self).setUp()
+
+    @classmethod
+    def resource_setup_container(cls):
+        cls.brex = ctn_base.Bridge(name='br-ex',
+                                   subnet=cls.PNet.cidr,
+                                   start_ip='172.24.6.128',
+                                   end_ip='172.24.6.254',
+                                   self_ip=True,
+                                   fixed_ip=cls.public_gw + '/24',
+                                   br_type=ctn_base.BRIDGE_TYPE_OVS)
+        cls.bridges.append(cls.brex)
+        # This is dummy container object for a dr service.
+        # This keeps data which passes to a quagga container.
+        cls.dr = ctn_base.BGPContainer(name='dr', asn=int(cls.L_AS.asn),
+                                       router_id=cls.L_AS.router_id)
+        cls.dr.set_addr_info(bridge='br-ex', ipv4=cls.public_gw)
+        # quagga container
+        cls.dockerimg = ctn_base.DockerImage()
+        cls.q_img = cls.dockerimg.create_quagga(check_exist=True)
+        cls.images.append(cls.q_img)
+        for i in range(cls.RAS_MAX):
+            qg = quagga.QuaggaBGPContainer(name='q' + str(i + 1),
+                                           asn=int(cls.ras_l[i].asn),
+                                           router_id=cls.ras_l[i].router_id,
+                                           ctn_image_name=cls.q_img)
+            cls.containers.append(qg)
+            cls.r_ass.append(qg)
+            qg.add_route(cls.ras_l[i].adv_net)
+            qg.run(wait=True)
+            cls.r_as_ip.append(cls.brex.addif(qg))
+            qg.add_peer(cls.dr, bridge=cls.brex.name)
 
     @test.idempotent_id('7f2acbc2-ff88-4a63-aa02-a2f9feb3f5b0')
     def test_check_neighbor_established(self):
-        self.bgp_peer_args[0]['peer_ip'] = self.r_as_ip[0].split('/')[0]
-        ext_net_id = self.create_bgp_network(
-            4, self.MyScope,
-            self.PNet, self.PPool, self.PSubNet,
-            [[self.TNet, self.TPool, self.TSubNet]],
-            self.MyRouter)
-        speaker_id, peers_ids = self.create_bgp_speaker_and_peer(
-            ext_net_id,
-            self.bgp_speaker_args,
-            [self.bgp_peer_args[0]])
-        dragent_id = self.get_dragent_id()
-        self.add_bgp_speaker_to_dragent(dragent_id, speaker_id)
-        neighbor_state = ctn_base.BGP_FSM_IDLE
-        for i in range(0, self.checktime):
-            neighbor_state = self.r_ass[0].get_neighbor_state(self.dr)
-            if neighbor_state == ctn_base.BGP_FSM_ESTABLISHED:
-                break
-            time.sleep(1)
-        self.assertEqual(neighbor_state, ctn_base.BGP_FSM_ESTABLISHED)
+        self._test_check_neighbor_established(self.ip_version)
 
     @test.idempotent_id('f32245fc-aeab-4244-acfa-3af9dd662e8d')
     def test_check_advertised_tenant_network(self):
-        self.bgp_peer_args[0]['peer_ip'] = self.r_as_ip[0].split('/')[0]
-        ext_net_id = self.create_bgp_network(
-            4, self.MyScope,
-            self.PNet, self.PPool, self.PSubNet,
-            [[self.TNet, self.TPool, self.TSubNet]],
-            self.MyRouter)
-        speaker_id, peers_ids = self.create_bgp_speaker_and_peer(
-            ext_net_id,
-            self.bgp_speaker_args,
-            [self.bgp_peer_args[0]])
-        dragent_id = self.get_dragent_id()
-        self.add_bgp_speaker_to_dragent(dragent_id, speaker_id)
-        neighbor_state = ctn_base.BGP_FSM_IDLE
-        for i in range(0, self.checktime):
-            neighbor_state = self.r_ass[0].get_neighbor_state(self.dr)
-            if neighbor_state == ctn_base.BGP_FSM_ESTABLISHED:
-                break
-            time.sleep(1)
-        self.assertEqual(neighbor_state, ctn_base.BGP_FSM_ESTABLISHED)
-        rib = self.r_ass[0].get_global_rib(prefix=self.TNet.cidr)
-        self.assertEqual(self.router_pub_ip, rib[0]['nexthop'])
+        self._test_check_advertised_tenant_network(self.ip_version)
 
     @test.idempotent_id('e4961cc1-0c47-4081-a896-caaa9342ca75')
     def test_check_neighbor_established_with_multiple_peers(self):
-        for i in range(0, self.RAS_MAX):
-            self.bgp_peer_args[i]['peer_ip'] = self.r_as_ip[i].split('/')[0]
-        ext_net_id = self.create_bgp_network(
-            4, self.MyScope,
-            self.PNet, self.PPool, self.PSubNet,
-            [[self.TNet, self.TPool, self.TSubNet]],
-            self.MyRouter)
-        speaker_id, peers_ids = self.create_bgp_speaker_and_peer(
-            ext_net_id,
-            self.bgp_speaker_args,
-            self.bgp_peer_args)
-        dragent_id = self.get_dragent_id()
-        self.add_bgp_speaker_to_dragent(dragent_id, speaker_id)
-        neighbor_state = ctn_base.BGP_FSM_IDLE
-        ras_list = []
-        for i in range(0, self.RAS_MAX):
-            ras_list.append({'as': self.r_ass[i], 'check': False})
-        ok_ras = 0
-        for i in range(0, self.checktime):
-            for j in range(0, self.RAS_MAX):
-                if ras_list[j]['check']:
-                    continue
-                neighbor_state = ras_list[j]['as'].get_neighbor_state(self.dr)
-                if neighbor_state == ctn_base.BGP_FSM_ESTABLISHED:
-                    ras_list[j]['check'] = True
-                    ok_ras += 1
-            if ok_ras == self.RAS_MAX:
-                break
-            time.sleep(1)
-        self.assertEqual(ok_ras, self.RAS_MAX)
+        self._test_check_neighbor_established_with_multiple_peers(
+            self.ip_version)
 
     @test.idempotent_id('91971dfb-c129-4744-9fbb-ac4f9e8d56c0')
     def test_check_advertised_tenant_network_with_multiple_peers(self):
-        for i in range(0, self.RAS_MAX):
-            self.bgp_peer_args[i]['peer_ip'] = self.r_as_ip[i].split('/')[0]
-        ext_net_id = self.create_bgp_network(
-            4, self.MyScope,
-            self.PNet, self.PPool, self.PSubNet,
-            [[self.TNet, self.TPool, self.TSubNet]],
-            self.MyRouter)
-        speaker_id, peers_ids = self.create_bgp_speaker_and_peer(
-            ext_net_id,
-            self.bgp_speaker_args,
-            self.bgp_peer_args)
-        dragent_id = self.get_dragent_id()
-        self.add_bgp_speaker_to_dragent(dragent_id, speaker_id)
-        neighbor_state = ctn_base.BGP_FSM_IDLE
-        ras_list = []
-        for i in range(0, self.RAS_MAX):
-            ras_list.append({'as': self.r_ass[i], 'check': False})
-        ok_ras = 0
-        for i in range(0, self.checktime):
-            for j in range(0, self.RAS_MAX):
-                if ras_list[j]['check']:
-                    continue
-                neighbor_state = ras_list[j]['as'].get_neighbor_state(self.dr)
-                if neighbor_state == ctn_base.BGP_FSM_ESTABLISHED:
-                    ras_list[j]['check'] = True
-                    ok_ras += 1
-            if ok_ras == self.RAS_MAX:
-                break
-            time.sleep(1)
-        self.assertEqual(ok_ras, self.RAS_MAX)
-        for i in range(0, self.RAS_MAX):
-            rib = self.r_ass[i].get_global_rib(prefix=self.TNet.cidr)
-            self.assertEqual(self.router_pub_ip, rib[0]['nexthop'])
+        self._test_check_advertised_tenant_network_with_multiple_peers(
+            self.ip_version)

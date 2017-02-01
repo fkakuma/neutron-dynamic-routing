@@ -27,6 +27,7 @@ from neutron import context
 from neutron.services import service_base
 
 from neutron_dynamic_routing.api.rpc.agentnotifiers import bgp_dr_rpc_agent_api  # noqa
+from neutron_dynamic_routing.api.rpc.callbacks import resources as dr_resources
 from neutron_dynamic_routing.api.rpc.handlers import bgp_speaker_rpc as bs_rpc
 from neutron_dynamic_routing.db import bgp_db
 from neutron_dynamic_routing.db import bgp_dragentscheduler_db
@@ -94,6 +95,9 @@ class BgpPlugin(service_base.ServicePluginBase,
         registry.subscribe(self.router_gateway_callback,
                            resources.ROUTER_GATEWAY,
                            events.AFTER_DELETE)
+        registry.subscribe(self.bgp_speaker_callback,
+                           dr_resources.BGP_SPEAKER,
+                           events.AFTER_CREATE)
 
     def get_bgp_speakers(self, context, filters=None, fields=None,
                          sorts=None, limit=None, marker=None,
@@ -115,6 +119,9 @@ class BgpPlugin(service_base.ServicePluginBase,
     def create_bgp_speaker(self, context, bgp_speaker):
         bgp_speaker = super(BgpPlugin, self).create_bgp_speaker(context,
                                                                 bgp_speaker)
+        kwargs = {'context': context, 'bgp_speaker': bgp_speaker}
+        registry.notify(dr_resources.BGP_SPEAKER, events.AFTER_CREATE,
+                        self, **kwargs)
         return bgp_speaker
 
     def update_bgp_speaker(self, context, bgp_speaker_id, bgp_speaker):
@@ -374,3 +381,10 @@ class BgpPlugin(service_base.ServicePluginBase,
         if LOG.isEnabledFor(logging.DEBUG):
             for route in routes:
                 LOG.debug(msg, route, bgp_speaker_id)
+
+    def bgp_speaker_callback(self, resource, event, trigger, **kwargs):
+        ctx = context.get_admin_context()
+        if event == events.AFTER_CREATE:
+            if self.bgp_drscheduler:
+                bgp_speaker = kwargs['bgp_speaker']
+                self.schedule_bgp_speaker(ctx, bgp_speaker)

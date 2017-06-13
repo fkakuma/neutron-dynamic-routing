@@ -55,6 +55,11 @@ class DrAgentAssociationError(n_exc.Conflict):
                 "to a BGP speaker.")
 
 
+class BgpSpeakerReschedulingFailed(n_exc.Conflict):
+    message = _("Failed rescheduling %(bgp_speaker_id)s "
+                "no eligible dr agnet found.")
+
+
 class BgpDrSchedulerController(wsgi.Controller):
     """Schedule BgpSpeaker for a BgpDrAgent"""
     def get_plugin(self):

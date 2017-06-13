@@ -61,4 +61,5 @@ class BgpSpeakerRpcCallback(object):
 
         Typically invoked by the BgpDrAgent as part of its bootstrap process.
         """
+        self.plugin.schedule_unscheduled_bgp_speakers(context, host)
         return self.plugin.get_bgp_speakers_for_agent_host(context, host)
